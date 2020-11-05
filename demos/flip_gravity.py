@@ -41,3 +41,4 @@ def step(points, velocity, velocity_field, mask, density, dt):
 app = App()
 app.set_state(state, step_function=step, dt=0.1, show=['density', 'velocity_field'])
 show(app, display=('density', 'velocity_field'))
+
