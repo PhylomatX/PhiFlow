@@ -22,7 +22,7 @@ state = dict(points=points, velocity=velocity, density=points.at(domain.grid()),
 def step(points, velocity, velocity_field, dt, **kwargs):
     div_free_velocity_field, pressure, _, divergence = fluid.make_incompressible(velocity_field, domain)
     velocity_change_field = div_free_velocity_field - velocity_field
-    velocity_change = velocity_change_field.sample_at(points.elements)
+    velocity_change = velocity_change_field.sample_at(points.elements.center)
     points = advect.advect(points, div_free_velocity_field, dt)
     velocity = velocity.values + velocity_change
 

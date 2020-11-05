@@ -23,23 +23,21 @@ gravity = Gravity()
 
 def step(points, velocity, velocity_field, mask, density, dt):
     # add forces
-    import ipdb
-    ipdb.set_trace()
     force = dt * gravity_tensor(gravity, velocity_field.rank)
     velocity_field += force
 
     points = advect.advect(points, velocity_field, dt)
 
-    velocity = PointCloud(points.elements, values=velocity_field.sample_at(points.elements))
+    velocity = PointCloud(points.elements, values=velocity_field.sample_at(points.elements.center))
     velocity_field = velocity.at(domain.sgrid())
     return dict(points=points, velocity=velocity, velocity_field=velocity_field, density=points.at(domain.grid()),
                 mask=points.at(domain.grid()))
 
 
-for i in range(5):
-    state = step(dt=1, **state)
+# for i in range(5):
+#     state = step(dt=1, **state)
 
 
-# app = App()
-# app.set_state(state, step_function=step, dt=0.1, show=['density', 'velocity_field'])
-# show(app, display=('density', 'velocity_field'))
+app = App()
+app.set_state(state, step_function=step, dt=0.1, show=['density', 'velocity_field'])
+show(app, display=('density', 'velocity_field'))
