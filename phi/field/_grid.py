@@ -1,4 +1,5 @@
 import numpy as np
+from functools import partial
 
 from phi import math
 from phi.geom import Box, Geometry, assert_same_rank, GridCell, AbstractBox
@@ -279,6 +280,41 @@ def stack_staggered_components(data: Tensor) -> Tensor:
     for dim, component in zip(data.shape.spatial.names, data.unstack('vector')):
         padded.append(math.pad(component, {d: (0, 1) for d in data.shape.spatial.without(dim).names}, mode=math.extrapolation.ZERO))
     return math.channel_stack(padded, 'vector')
+
+
+def extend_symmetric(resolution: Shape, bounds: AbstractBox, axis, cells=1):
+    axis_mask = np.array(resolution.mask(axis)) * cells
+    unit = bounds.size / resolution * axis_mask
+    delta_size = unit / 2
+    bounds = Box(bounds.lower - delta_size, bounds.upper + delta_size)
+    ext_res = resolution.sizes + axis_mask
+    return resolution.with_sizes(ext_res), bounds
+
+
+def extp_cgrid(cgrid: CenteredGrid, size: int = 1) -> CenteredGrid:
+    if size == 0:
+        return cgrid
+    # extrapolation vertically and horizontally
+    values_l, values_r = math.shift(cgrid.values, (-1, 1))
+    where = partial(math.where, value_true=1, value_false=0)
+    mask = math.sum(where(values_l) + where(values_r), axis='shift')
+    extp = math.divide_no_nan(math.sum(values_l + values_r, axis='shift'), mask)
+    # extrapolate diagonally
+    values_ll, values_lr = math.shift(values_l.shift[0], (-1, 1), axes='y')
+    values_rl, values_rr = math.shift(values_r.shift[0], (-1, 1), axes='y')
+    mask = where(values_ll) + where(values_lr) + where(values_rl) + where(values_rr)
+    extp_diag = math.divide_no_nan(values_ll + values_lr + values_rl + values_rr, mask).unstack('shift')[0]
+    # prioritize results from vertical and horizontal shifting over diagonal shifting
+    extp = math.where(extp, extp, extp_diag)
+    cgrid = CenteredGrid(math.where(cgrid.values, cgrid.values, extp), cgrid.box, cgrid.extrapolation)
+    return extp_cgrid(cgrid, size=size - 1)
+
+
+def extp_sgrid(sgrid: StaggeredGrid, size: int = 1) -> StaggeredGrid:
+    tensors = []
+    for cgrid in sgrid.unstack('vector'):
+        tensors.append(extp_cgrid(cgrid, size=size).values)
+    return StaggeredGrid(math.channel_stack(tensors, 'vector'), sgrid.box, sgrid.extrapolation)
 
 
 def _validate_staggered_values(values: TensorStack):

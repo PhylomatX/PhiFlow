@@ -17,21 +17,25 @@ active_mask = PointCloud(points.elements)
 
 # define initial state
 state = dict(points=points, velocity=velocity, density=points.at(domain.grid()),
-             velocity_field=velocity.at(domain.sgrid()), mask=active_mask.at(domain.grid()))
+             velocity_field=velocity.at(domain.sgrid()), mpoints=active_mask)
 gravity = Gravity()
 
 
-def step(points, velocity, velocity_field, mask, density, dt):
+def step(points, velocity, velocity_field, mpoints, density, dt):
     # add forces
     force = dt * gravity_tensor(gravity, velocity_field.rank)
     velocity_field += force
 
+    mask = mpoints.at(domain.sgrid())
+    velocity_field = field.extp_sgrid(velocity_field * mask, size=1)
+    velocity = velocity_field.sample_at(points.elements.center)
     points = advect.advect(points, velocity_field, dt)
+    mpoints = advect.advect(mpoints, velocity_field, dt)
 
-    velocity = PointCloud(points.elements, values=velocity_field.sample_at(points.elements.center))
+    velocity = PointCloud(points.elements, values=velocity)
     velocity_field = velocity.at(domain.sgrid())
     return dict(points=points, velocity=velocity, velocity_field=velocity_field, density=points.at(domain.grid()),
-                mask=points.at(domain.grid()))
+                mpoints=mpoints)
 
 
 # for i in range(5):
@@ -41,3 +45,4 @@ def step(points, velocity, velocity_field, mask, density, dt):
 app = App()
 app.set_state(state, step_function=step, dt=0.1, show=['density', 'velocity_field'])
 show(app, display=('density', 'velocity_field'))
+
