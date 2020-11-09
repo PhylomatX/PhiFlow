@@ -300,8 +300,8 @@ def extp_cgrid(cgrid: CenteredGrid, size: int = 1) -> CenteredGrid:
     mask = math.sum(where(values_l) + where(values_r), axis='shift')
     extp = math.divide_no_nan(math.sum(values_l + values_r, axis='shift'), mask)
     # extrapolate diagonally
-    values_ll, values_lr = math.shift(values_l.shift[0], (-1, 1), axes='y')
-    values_rl, values_rr = math.shift(values_r.shift[0], (-1, 1), axes='y')
+    values_ll, values_lr = math.shift(values_l.shift[0], (-1, 1), dims='y')
+    values_rl, values_rr = math.shift(values_r.shift[0], (-1, 1), dims='y')
     mask = where(values_ll) + where(values_lr) + where(values_rl) + where(values_rr)
     extp_diag = math.divide_no_nan(values_ll + values_lr + values_rl + values_rr, mask).unstack('shift')[0]
     # prioritize results from vertical and horizontal shifting over diagonal shifting

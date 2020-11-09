@@ -53,6 +53,10 @@ def step(points, velocity, v_field, mpoints, pressure, dt, **kwargs):
     # advect
     v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 10)
     v_div_free_field *= hard_bcs
+
+    import ipdb
+    ipdb.set_trace()
+
     points = advect.advect(points, v_div_free_field, dt)
     mpoints = advect.advect(mpoints, v_div_free_field, dt)
 
@@ -62,10 +66,10 @@ def step(points, velocity, v_field, mpoints, pressure, dt, **kwargs):
                 divergence=div, smask=smask, cmask=cmask)
 
 
-# for i in range(50):
-#     state = step(dt=1, **state)
+for i in range(50):
+    state = step(dt=1, **state)
 
 
-app = App()
-app.set_state(state, step_function=step, dt=0.1, show=['density', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'])
-show(app, display=('density', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'), port=8052)
+# app = App()
+# app.set_state(state, step_function=step, dt=0.1, show=['density', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'])
+# show(app, display=('density', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'), port=8052)
