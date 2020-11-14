@@ -17,10 +17,12 @@ initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8
 # initial_density.native()[15:45, 180:190] = 1
 # initial_density.native()[:, 0:20] = 1
 initial_points = _distribute_points(initial_density, 8)
-points = PointCloud(Sphere(initial_points, 0), add_overlapping=True)
+points = PointCloud(Sphere(initial_points, 0))
 initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
+
 velocity = PointCloud(points.elements, values=initial_velocity)
 active_mask = PointCloud(points.elements)
+
 
 # define initial state
 state = dict(points=points, velocity=velocity, density=points.at(domain.grid()), v_force_field=domain.sgrid(0), v_change_field=domain.sgrid(0),
@@ -53,9 +55,6 @@ def step(points, velocity, v_field, mpoints, pressure, dt, iter, **kwargs):
     accessible_mask = domain.grid(1, extrapolation=domain.boundaries.accessible_extrapolation)
     hard_bcs = field.stagger(accessible_mask, math.minimum, accessible_mask.extrapolation)
 
-    # extp_mask = domain.grid(extrapolation=cmask.extrapolation)
-    # extp_mask.values.native()[slice(1, -1), slice(1, -1)] = cmask.values.native()[slice(1, -1), slice(1, -1)]
-
     # apply forces
     force = dt * gravity_tensor(Gravity(), v_field.rank)
     v_force_field = (v_field + force)
@@ -63,15 +62,15 @@ def step(points, velocity, v_field, mpoints, pressure, dt, iter, **kwargs):
     plot_sgrid(v_force_field, 'force', iter)
 
     # solve pressure
-
     v_force_field = field.extp_sgrid(v_force_field * smask, 2) * hard_bcs
     plot_sgrid(v_force_field, 'force_extp', iter)
-    div = field.divergence(v_force_field) * cmask
+    div = field.divergence(v_force_field)
 
     plot_cgrid(div, 'div', iter)
     plot_cgrid(cmask, 'active', iter)
 
-    laplace = lambda pressure: field.divergence(field.gradient(pressure, type=StaggeredGrid) * domain.sgrid(1)) * cmask + (1 - cmask) * pressure
+    # TODO: Understand why -4 in pressure equation is necessary / Understand why multiplying div with cmask helps with +1 case
+    laplace = lambda pressure: field.divergence(field.gradient(pressure, type=StaggeredGrid) * domain.sgrid(1)) * cmask - 4 * (1 - cmask) * pressure
     converged, pressure, iterations = field.solve(laplace, div, pressure, solve_params=math.LinearSolve(None, 1e-3))
 
     plot_cgrid(pressure, 'pressure', iter)
@@ -86,12 +85,12 @@ def step(points, velocity, v_field, mpoints, pressure, dt, iter, **kwargs):
 
     plot_sgrid(v_change_field, 'change', iter)
 
-    v_change_field = field.extp_sgrid(v_change_field * smask, 2)
+    v_change_field = field.extp_sgrid(v_change_field * smask, 10)
     v_change = v_change_field.sample_at(points.elements.center)
     velocity = velocity.values + v_change
 
     # advect
-    v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 2)
+    v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 10)
     v_div_free_field *= hard_bcs
 
     points = advect.advect(points, v_div_free_field, dt)
