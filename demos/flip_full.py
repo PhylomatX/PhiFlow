@@ -85,12 +85,12 @@ def step(points, velocity, v_field, mpoints, pressure, dt, iter, **kwargs):
 
     plot_sgrid(v_change_field, 'change', iter)
 
-    v_change_field = field.extp_sgrid(v_change_field * smask, 10)
+    v_change_field = field.extp_sgrid(v_change_field * smask, 2)
     v_change = v_change_field.sample_at(points.elements.center)
     velocity = velocity.values + v_change
 
     # advect
-    v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 10)
+    v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 2)
     v_div_free_field *= hard_bcs
 
     points = advect.advect(points, v_div_free_field, dt)

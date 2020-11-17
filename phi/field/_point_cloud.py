@@ -64,6 +64,13 @@ class PointCloud(SampledField):
             duplicates_handling = 'add'
         else:
             duplicates_handling = 'mean'
+
+        # TODO: Check how this should be solved:
+        # if self.values.shape.spatial_rank > 0:
+        #     duplicates_handling = 'mean'
+        # else:
+        #     duplicates_handling = 'any'  # constant value, no need for interpolation
+
         scattered = math.scatter(closest_index, self.values, resolution, duplicates_handling=duplicates_handling, outside_handling='discard', scatter_dims=('points',))
         return scattered
 
