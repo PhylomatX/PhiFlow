@@ -86,7 +86,6 @@ def _distribute_points(field: Tensor, points_per_cell: int = 1, dist: str = 'uni
     :param dist: 'uniform' or 'center'
     :return: tensor of shape (batch_size, point_count, rank)
     """
-    # TODO: Enable batch support (math.nonzero returns batch dim as vector dim)
     indices = math.to_float(math.nonzero(field, list_dim='points'))
     temp = []
     for _ in range(points_per_cell):

@@ -27,6 +27,8 @@ def step(points, velocity, velocity_field, dt, **kwargs):
     velocity = velocity.values + velocity_change
 
     # inflow
+    import ipdb
+    ipdb.set_trace()
     new_points = math.tensor(math.concat([points.points, initial_points], dim='points'), names=['points', 'vector'])
     points = PointCloud(Sphere(new_points, 0), add_overlapping=True)
     new_velocity = math.tensor(math.concat([velocity, initial_velocity], dim='points'), names=['points', 'vector'])
@@ -38,11 +40,11 @@ def step(points, velocity, velocity_field, dt, **kwargs):
                 pressure=pressure, divergence=divergence)
 
 
-# for i in range(5):
-#     state = step(**state, dt=1)
+for i in range(5):
+    state = step(**state, dt=1)
 
-app = App()
-app.set_state(state, step_function=step, dt=1, show=['density', 'velocity_field', 'velocity_change_field',
-                                                     'div_free_velocity_field', 'pressure', 'divergence'])
-show(app, display=('density', 'velocity_field', 'velocity_change_field', 'div_free_velocity_field', 'pressure',
-                   'divergence'))
+# app = App()
+# app.set_state(state, step_function=step, dt=1, show=['density', 'velocity_field', 'velocity_change_field',
+#                                                      'div_free_velocity_field', 'pressure', 'divergence'])
+# show(app, display=('density', 'velocity_field', 'velocity_change_field', 'div_free_velocity_field', 'pressure',
+#                    'divergence'))
