@@ -6,18 +6,52 @@ import matplotlib.pyplot as plt
 
 # define world
 size = (64, 64)
-domain = Domain(size, boundaries=CLOSED, bounds=Box(0, (64, 64)))
+domain = Domain(size, boundaries=CLOSED, bounds=Box(0, size))
 
 # define initial liquid
 initial_density = domain.grid().values
-# initial_density.numpy()[28:36, 28:36] = 1
+
+# block falls into pool
 initial_density.native()[size[-1] * 2 // 8: size[-1] * 6 // 8, size[-2] * 6 // 8: size[-2] * 7 // 8 - 1] = 1
 initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8: size[-2] * 2 // 8] = 1
-# initial_density.numpy()[28:36, 28:36] = 1
-# initial_density.native()[15:45, 180:190] = 1
-# initial_density.native()[:, 0:20] = 1
+
+# TODO: block which includes border region keeps sticking
+# initial_density.native()[0:size[-1], size[1]-30:size[1]] = 1
+
+# large block falls to bottom
+# initial_density.native()[1:size[-1]-1, size[1]-30:size[1]-1] = 1
+
+# multiple small blocks falling into pool
+# initial_density.native()[1:10, 50:60] = 1
+# initial_density.native()[30:40, 50:60] = 1
+# initial_density.native()[50:60, 50:60] = 1
+# initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8: size[-2] * 2 // 8] = 1
+
+# multiple small blocks falling to bottom
+# initial_density.native()[1:10, 50:60] = 1
+# initial_density.native()[30:40, 50:60] = 1
+# initial_density.native()[50:60, 50:60] = 1
+
+# tower on the left
+# initial_density.native()[0:10, 0:60] = 1
+
+# towers on both sides
+# initial_density.native()[0:10, 0:60] = 1
+# initial_density.native()[54:64, 0:60] = 1
+
+# tower in the middle
+# initial_density.native()[28:36, 0:60] = 1
+
+# multiple small blocks in different heights
+# initial_density.native()[1:10, 20:30] = 1
+# initial_density.native()[1:10, 40:50] = 1
+# initial_density.native()[30:40, 20:30] = 1
+# initial_density.native()[50:60, 20:30] = 1
+# initial_density.native()[50:60, 50:60] = 1
+
+
 initial_points = _distribute_points(initial_density, 8)
-points = PointCloud(Sphere(initial_points, 0))
+points = PointCloud(Sphere(initial_points, 0), add_overlapping=True)
 initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
 
 velocity = PointCloud(points.elements, values=initial_velocity)
@@ -56,7 +90,7 @@ def step(points, velocity, v_field, mpoints, pressure, dt, iter, **kwargs):
     hard_bcs = field.stagger(accessible_mask, math.minimum, accessible_mask.extrapolation)
 
     # apply forces
-    force = dt * gravity_tensor(Gravity(), v_field.rank)
+    force = dt * gravity_tensor(Gravity(), v_field.shape.vector)
     v_force_field = (v_field + force)
 
     plot_sgrid(v_force_field, 'force', iter)
@@ -70,7 +104,8 @@ def step(points, velocity, v_field, mpoints, pressure, dt, iter, **kwargs):
     plot_cgrid(cmask, 'active', iter)
 
     # TODO: Understand why -4 in pressure equation is necessary / Understand why multiplying div with cmask helps with +1 case
-    laplace = lambda pressure: field.divergence(field.gradient(pressure, type=StaggeredGrid) * domain.sgrid(1)) * cmask - 4 * (1 - cmask) * pressure
+    # laplace = lambda p: field.where(cmask, field.divergence(field.gradient(p, type=StaggeredGrid) * domain.sgrid(1)), -4 * (1 - cmask) * p)
+    laplace = lambda p: field.divergence(field.gradient(p, type=StaggeredGrid) * hard_bcs) * cmask - 4 * (1 - cmask) * p
     converged, pressure, iterations = field.solve(laplace, div, pressure, solve_params=math.LinearSolve(None, 1e-3))
 
     plot_cgrid(pressure, 'pressure', iter)
@@ -90,7 +125,7 @@ def step(points, velocity, v_field, mpoints, pressure, dt, iter, **kwargs):
     velocity = velocity.values + v_change
 
     # advect
-    v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 2)
+    v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 10)
     v_div_free_field *= hard_bcs
 
     points = advect.advect(points, v_div_free_field, dt)

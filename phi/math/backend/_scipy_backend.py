@@ -322,8 +322,6 @@ class SciPyBackend(Backend):
         return np.all(boolean_tensor, axis=axis, keepdims=keepdims)
 
     def scatter(self, indices, values, shape, duplicates_handling='undefined', outside_handling='undefined'):
-        import ipdb
-        ipdb.set_trace()
         assert duplicates_handling in ('undefined', 'add', 'mean', 'any')
         assert outside_handling in ('discard', 'clamp', 'undefined')
         shape = np.array(shape, np.int32)
