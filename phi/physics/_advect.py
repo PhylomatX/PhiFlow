@@ -1,28 +1,32 @@
 """
 Container for different advection schemes for grids and particles.
 
-Esamples:
+Examples:
 
 * semi_lagrangian (grid)
 * mac_cormack (grid)
 * runge_kutta_4 (particle)
+* euler (particle)
 """
 
 from phi import math
 from phi.field import SampledField, ConstantField, StaggeredGrid, CenteredGrid, Grid, Field, PointCloud
 
 
-def advect(field: Field, velocity: Field, dt):
+def advect(field: Field, velocity: Field, dt, simple: bool = False):
     """
-Advect `field` along the `velocity` vectors using the default advection method.
+    Advect `field` along the `velocity` vectors using the default advection method.
     :param field: any built-in Field
     :param velocity: any Field
     :param dt: time increment
+    :param simple: flag for using simple advection schemes
     :return: Advected field of same type as `field`
     """
     if isinstance(field, PointCloud):
         if isinstance(velocity, PointCloud) and velocity.elements == field.elements:
             return points(field, velocity, dt)
+        if simple:
+            return euler(field, velocity, dt=dt)
         return runge_kutta_4(field, velocity, dt=dt)
     if isinstance(field, ConstantField):
         return field
@@ -69,9 +73,25 @@ def mac_cormack(field: CenteredGrid, velocity: Field, dt, correction_strength=1.
     return field_clamped
 
 
+def euler(field: PointCloud, velocity: Field, dt):
+    """
+    Advection via a single Euler step.
+    :param field: PointCloud with any number of components
+    :param velocity: velocity: Vector field
+    :param dt: time increment
+    :return: SampledField with same data as `field` but advected points
+    """
+    assert isinstance(field, PointCloud), 'Euler advection works for PointCloud only.'
+    assert isinstance(velocity, Field), 'Velocity for Euler advection must have Field type.'
+    points = field.elements
+    vel = velocity.sample_in(points)
+    new_points = points.shifted(dt * vel)
+    return PointCloud(new_points, field.values, field.extrapolation, add_overlapping=field._add_overlapping)
+
+
 def runge_kutta_4(field: PointCloud, velocity: Field, dt):
     """
-Lagrangian advection of particles.
+    Lagrangian advection of particles.
     :param field: SampledField with any number of components
     :type field: SampledField
     :param velocity: Vector field
