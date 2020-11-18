@@ -15,7 +15,7 @@ initial_density = domain.grid().values
 # initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8: size[-2] * 2 // 8] = 1
 
 # large block falls to bottom
-# initial_density.native()[1:size[-1]-1, size[1]-30:size[1]-1] = 1
+initial_density.native()[1:size[-1]-1, size[1]-30:size[1]-1] = 1
 
 # TODO: Inflow to bottom violates borders
 # initial_density.native()[28:32, 50:55] = 1
