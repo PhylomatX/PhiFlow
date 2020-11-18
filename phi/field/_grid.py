@@ -95,7 +95,7 @@ class CenteredGrid(Grid):
     def sample_at(self, points, reduce_channels=()) -> Tensor:
         local_points = self.box.global_to_local(points)
         # TODO: The -0.5 here had a great effect
-        local_points = local_points * self.resolution - 0.5
+        local_points = local_points * self.resolution
         if len(reduce_channels) == 0:
             return math.grid_sample(self.values, local_points, self.extrapolation)
         else:
@@ -301,7 +301,7 @@ def extp_cgrid(cgrid: CenteredGrid, size: int = 1) -> CenteredGrid:
     mask = math.sum(where(values_l) + where(values_r), axis='shift')
     extp = math.divide_no_nan(math.sum(values_l + values_r, axis='shift'), mask)
     # extrapolate diagonally
-    values_ll, values_lr = math.shift(values_l.shift[0], (-1, 1), dims='y', stack_dim=None)
+    values_ll, values_lr = math.shift(values_l.shift[0], (-1, 1), dims='y')
     values_rl, values_rr = math.shift(values_r.shift[0], (-1, 1), dims='y')
     mask = where(values_ll) + where(values_lr) + where(values_rl) + where(values_rr)
     extp_diag = math.divide_no_nan(values_ll + values_lr + values_rl + values_rr, mask).unstack('shift')[0]

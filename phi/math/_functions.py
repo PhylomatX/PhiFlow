@@ -234,9 +234,6 @@ def closest_grid_values(grid: Tensor, coordinates: Tensor, extrap: 'extrapolatio
     max_coords = extrap.transform_coordinates(min_coords + 1, grid.shape)
     min_coords = extrap.transform_coordinates(min_coords, grid.shape)
 
-    print(grid.numpy())
-    print('\n')
-
     def left_right(is_hi_by_axis_left, ax_idx):
         is_hi_by_axis_right = is_hi_by_axis_left | np.array([ax == ax_idx for ax in range(grid.shape.spatial_rank)])
         coords_left = where(is_hi_by_axis_left, max_coords, min_coords)
@@ -250,10 +247,6 @@ def closest_grid_values(grid: Tensor, coordinates: Tensor, extrap: 'extrapolatio
         return spatial_stack([values_left, values_right], grid.shape.names[ax_idx])
 
     result = left_right(np.array([False] * grid.shape.spatial_rank), 0)
-
-    print('Interpolation uses:')
-    print(result.numpy())
-    print('\n\n')
 
     return result
 
