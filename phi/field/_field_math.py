@@ -207,6 +207,5 @@ def where(mask: Field or Geometry, field_true: Field, field_false: Field):
         field_true = field_true.at(mask)
     else:
         raise NotImplementedError('At least one argument must be a SampledField')
-    values = mask.values * field_true.values + (1 - mask.values) * field_false.values
-    # values = math.where(mask.values, field_true.values, field_false.values)
+    values = math.divide_no_nan(mask.values, mask.values) * field_true.values + (1 - mask.values) * field_false.values
     return field_true._with(values)
