@@ -130,7 +130,7 @@ def runge_kutta_4(field: PointCloud, velocity: StaggeredGrid, dt):
     # --- Combine points with RK4 scheme ---
     vel = (1/6.) * (vel_k1 + 2 * (vel_k2 + vel_k3) + vel_k4)
     new_points = points.shifted(dt * vel)
-    return PointCloud(new_points, field.values, field.extrapolation, add_overlapping=field._add_overlapping)
+    return PointCloud(new_points, field.values, field.extrapolation, add_overlapping=field._add_overlapping, bounds=field.bounds)
 
 
 def points(field: PointCloud, velocity: PointCloud, dt):

@@ -13,7 +13,7 @@ from os.path import isfile
 
 import numpy as np
 from phi import struct, math
-from phi.field import CenteredGrid, Field, StaggeredGrid
+from phi.field import CenteredGrid, Field, StaggeredGrid, PointCloud
 from phi.physics._world import StateProxy, world
 from .fluidformat import Scene
 

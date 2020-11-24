@@ -57,7 +57,7 @@ initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8
 
 # generate points
 initial_points = _distribute_points(initial_density, 8)
-points = PointCloud(Sphere(initial_points, 0), add_overlapping=True)
+points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
 initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
 velocity = PointCloud(points.elements, values=initial_velocity)
 
@@ -118,14 +118,14 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
     # add possible inflow
     if iter < inflow:
         new_points = math.tensor(math.concat([points.points, initial_points], dim='points'), names=['points', 'vector'])
-        points = PointCloud(Sphere(new_points, 0), add_overlapping=True)
+        points = PointCloud(Sphere(new_points, 0), add_overlapping=True, bounds=points.bounds)
         new_velocity = math.tensor(math.concat([velocity.values, initial_velocity], dim='points'), names=['points', 'vector'])
         velocity = PointCloud(points.elements, values=new_velocity)
 
     # check if particles are inside obstacles
     for obstacle in obstacles:
         shift = obstacle.geometry.shift_outward(points.elements.center)
-        points = PointCloud(points.elements.shifted(shift), add_overlapping=True)
+        points = PointCloud(points.elements.shifted(shift), add_overlapping=True, bounds=points.bounds)
     velocity = PointCloud(points.elements, values=velocity.values)
 
     # get new velocity field
@@ -139,7 +139,6 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
 # for i in range(500):
 #     state = step(dt=0.1, **state)
 
-
 app = App()
-app.set_state(state, step_function=step, dt=0.1, show=['density', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'])
-show(app, display=('density', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'), port=8052)
+app.set_state(state, step_function=step, dt=0.1, show=['points', 'density'])
+show(app, display=('points', 'density'), port=8052)

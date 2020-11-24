@@ -5,7 +5,7 @@ import numpy as np
 import plotly.figure_factory as plotly_figures
 
 from phi.math import GLOBAL_AXIS_ORDER as physics_config
-from phi.field import CenteredGrid, StaggeredGrid
+from phi.field import CenteredGrid, StaggeredGrid, PointCloud
 from ..plot import FRONT, RIGHT, TOP
 from .colormaps import COLORMAPS
 from ... import math
@@ -39,6 +39,9 @@ def dash_graph_plot(data, settings):
                 return vector_field(slice_2d(data, settings), settings)
             else:
                 return heatmap(slice_2d(data, settings), settings)
+
+    if isinstance(data, PointCloud):
+        return point_plot(data.elements.center, data.bounds)
 
     warnings.warn('No figure recipe for data %s' % data)
     return EMPTY_FIGURE
@@ -207,6 +210,19 @@ def plot(field1d, settings):
     data = reduce_component(data, component)
     data = data.native()
     return {'data': [{'mode': 'markers+lines', 'type': 'scatter', 'x': x, 'y': data}]}
+
+
+def point_plot(cloud, bounds):
+    data = cloud.native()
+    x = data[:, 0]
+    y = data[:, 1]
+
+    if bounds is None:
+        return {'data': [{'mode': 'markers', 'type': 'scatter', 'x': x, 'y': y}]}
+    else:
+        return {'data': [{'mode': 'markers', 'type': 'scatter', 'x': x, 'y': y}],
+                'layout': {'xaxis': {'range': [int(bounds.lower), int(bounds.upper[0])]},
+                           'yaxis': {'range': [int(bounds.lower), int(bounds.upper[1])]}}}
 
 
 def reduce_component(tensor, component):
