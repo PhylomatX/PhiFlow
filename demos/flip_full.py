@@ -1,14 +1,13 @@
 from phi.flow import *
-import time
 from phi.physics._effect import Gravity, gravity_tensor
 from phi.field._point_cloud import _distribute_points
-import matplotlib.pyplot as plt
 
 # define world
-# size = (100, 400)
+# size = (30, 400)
 size = (64, 64)
 domain = Domain(size, boundaries=CLOSED, bounds=Box(0, size))
 initial_density = domain.grid().values
+inflow = 0
 
 # block falls into pool
 initial_density.native()[size[-1] * 2 // 8: size[-1] * 6 // 8, size[-2] * 6 // 8: size[-2] * 7 // 8 - 1] = 1
@@ -17,9 +16,8 @@ initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8
 # large block falls to bottom
 # initial_density.native()[1:size[-1]-1, size[1]-30:size[1]-1] = 1
 
-# TODO: Inflow to bottom violates borders
-# initial_density.native()[28:32, 50:55] = 1
-# initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8: size[-2] * 2 // 8] = 1
+# small block (or inflow) to bottom
+# initial_density.native()[20:50, 55:62] = 8
 
 # multiple small blocks falling into pool
 # initial_density.native()[1:10, 50:60] = 1
@@ -40,7 +38,7 @@ initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8
 # initial_density.native()[54:64, 0:60] = 1
 
 # tower in the middle
-# initial_density.native()[28:36, 0:60] = 1
+# initial_density.native()[30:36, 0:60] = 1
 
 # multiple small blocks in different heights
 # initial_density.native()[1:10, 20:30] = 1
@@ -53,34 +51,43 @@ initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8
 # initial_density.native()[0:size[-1], size[1]-30:size[1]] = 1
 
 # block falls into pool from large height => change domain
-# initial_density.native()[40:60, 370:390] = 1
+# initial_density.native()[10:20, 370:390] = 1
 # initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8: size[-2] * 2 // 8] = 1
 
 
+# generate points
 initial_points = _distribute_points(initial_density, 8)
 points = PointCloud(Sphere(initial_points, 0), add_overlapping=True)
 initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
 velocity = PointCloud(points.elements, values=initial_velocity)
+
+
+# initialize masks
 density = points.at(domain.grid())
-
-inflow = 0
-
+sdensity = points.at(domain.sgrid())
 ones = domain.grid(1, extrapolation=density.extrapolation)
 zeros = domain.grid(0, extrapolation=density.extrapolation)
 cmask = field.where(density, ones, zeros)
+sones = domain.sgrid(1, extrapolation=density.extrapolation)
+szeros = domain.sgrid(0, extrapolation=density.extrapolation)
+smask = field.where(sdensity, sones, szeros)
 
+# define obstacles
+# obstacles = [Obstacle(Box[30:50, 30:40]), Obstacle(Box[10:30, 10:15])]
+obstacles = ()
 
 # define initial state
 state = dict(points=points, velocity=velocity, density=density, v_force_field=domain.sgrid(0), v_change_field=domain.sgrid(0),
              v_div_free_field=domain.sgrid(0), v_field=velocity.at(domain.sgrid()), pressure=domain.grid(0),
-             divergence=domain.grid(0), smask=field.stagger(cmask, math.minimum, cmask.extrapolation), cmask=cmask, iter=0)
+             divergence=domain.grid(0), smask=smask, cmask=cmask, accessible=domain.grid(0), iter=0)
 
 
 def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs):
     # get domain
     cmask = field.where(density, ones, zeros)
-    smask = field.stagger(cmask, math.minimum, cmask.extrapolation)
-    accessible_mask = domain.grid(1, extrapolation=domain.boundaries.accessible_extrapolation)
+    smask = field.where(points.at(domain.sgrid()), sones, szeros)
+    accessible = domain.grid(1 - HardGeometryMask(union([obstacle.geometry for obstacle in obstacles])))
+    accessible_mask = domain.grid(accessible, extrapolation=domain.boundaries.accessible_extrapolation)
     hard_bcs = field.stagger(accessible_mask, math.minimum, accessible_mask.extrapolation)
 
     # apply forces
@@ -88,10 +95,11 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
     v_force_field = (v_field + force)
 
     # solve pressure
+    # this solves the distortion issue of a falling block by extrapolating the velocity field so that divergence and pressure lay outside of active mask
     v_force_field = field.extp_sgrid(v_force_field * smask, 2) * hard_bcs
     div = field.divergence(v_force_field) * cmask
     # TODO: Understand why -4 in pressure equation is necessary / Understand why multiplying div with cmask helps with +1 case
-    laplace = lambda p: field.where(cmask, field.divergence(field.gradient(p, type=StaggeredGrid) * domain.sgrid(1)), -4 * (1 - cmask) * p)
+    laplace = lambda p: field.where(cmask, field.divergence(field.gradient(p, type=StaggeredGrid) * domain.sgrid(1)), -4 * p)
     converged, pressure, iterations = field.solve(laplace, div, pressure, solve_params=math.LinearSolve(None, 1e-3))
     gradp = field.gradient(pressure, type=type(v_force_field))
     v_div_free_field = v_force_field - gradp
@@ -103,28 +111,33 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
     velocity = velocity.values + v_change
 
     # advect
-    v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 2)
-    v_div_free_field *= hard_bcs
-    points = advect.advect(points, v_div_free_field, dt, simple=True)
+    v_div_free_field *= hard_bcs * smask
+    points = advect.advect(points, v_div_free_field, dt)
     velocity = PointCloud(points.elements, values=velocity)
 
-    # add inflow
+    # add possible inflow
     if iter < inflow:
         new_points = math.tensor(math.concat([points.points, initial_points], dim='points'), names=['points', 'vector'])
         points = PointCloud(Sphere(new_points, 0), add_overlapping=True)
         new_velocity = math.tensor(math.concat([velocity.values, initial_velocity], dim='points'), names=['points', 'vector'])
         velocity = PointCloud(points.elements, values=new_velocity)
 
+    # check if particles are inside obstacles
+    for obstacle in obstacles:
+        shift = obstacle.geometry.shift_outward(points.elements.center)
+        points = PointCloud(points.elements.shifted(shift), add_overlapping=True)
+    velocity = PointCloud(points.elements, values=velocity.values)
+
     # get new velocity field
     v_field = velocity.at(domain.sgrid())
 
     return dict(points=points, velocity=velocity, v_field=v_field, v_force_field=v_force_field, v_change_field=v_change_field,
                 v_div_free_field=v_div_free_field, density=points.at(domain.grid()), pressure=pressure,
-                divergence=div, smask=smask, cmask=cmask, iter=iter+1)
+                divergence=div, smask=smask, cmask=cmask, accessible=accessible * 2 + cmask, iter=iter+1)
 
 
-# for i in range(50):
-#     state = step(dt=1, **state)
+# for i in range(500):
+#     state = step(dt=0.1, **state)
 
 
 app = App()

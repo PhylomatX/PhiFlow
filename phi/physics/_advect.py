@@ -10,7 +10,7 @@ Examples:
 """
 
 from phi import math
-from phi.field import SampledField, ConstantField, StaggeredGrid, CenteredGrid, Grid, Field, PointCloud
+from phi.field import SampledField, ConstantField, StaggeredGrid, CenteredGrid, Grid, Field, PointCloud, extp_sgrid
 
 
 def advect(field: Field, velocity: Field, dt, simple: bool = False):
@@ -89,7 +89,7 @@ def euler(field: PointCloud, velocity: Field, dt):
     return PointCloud(new_points, field.values, field.extrapolation, add_overlapping=field._add_overlapping)
 
 
-def runge_kutta_4(field: PointCloud, velocity: Field, dt):
+def runge_kutta_4(field: PointCloud, velocity: StaggeredGrid, dt):
     """
     Lagrangian advection of particles.
     :param field: SampledField with any number of components
@@ -100,13 +100,33 @@ def runge_kutta_4(field: PointCloud, velocity: Field, dt):
     :return: SampledField with same data as `field` but advected points
     """
     assert isinstance(field, SampledField)
-    assert isinstance(velocity, Field)
+    assert isinstance(velocity, StaggeredGrid), 'runge_kutta advection works for StaggeredGrids only.'
     points = field.elements
+
     # --- Sample velocity at intermediate points ---
+    # At first step all points are inside velocity region
+    velocity = extp_sgrid(velocity, 2)
     vel_k1 = velocity.sample_in(points)
-    vel_k2 = velocity.sample_in(points.shifted(0.5 * dt * vel_k1))
-    vel_k3 = velocity.sample_in(points.shifted(0.5 * dt * vel_k2))
-    vel_k4 = velocity.sample_in(points.shifted(dt * vel_k3))
+
+    # Adjust field extrapolation to maximum shift of secondary intermediate points
+    shifted_points = points.shifted(0.5 * dt * vel_k1)
+    shift = math.ceil(math.max(math.abs(shifted_points.center - points.center)))
+    total_shift = shift
+    velocity = extp_sgrid(velocity, int(shift))
+    vel_k2 = velocity.sample_in(shifted_points)
+
+    # Same for points of third and fourth component
+    shifted_points = points.shifted(0.5 * dt * vel_k2)
+    shift = math.ceil(math.max(math.abs(shifted_points.center - points.center))) - total_shift
+    total_shift += shift
+    velocity = extp_sgrid(velocity, int(shift))
+    vel_k3 = velocity.sample_in(shifted_points)
+
+    shifted_points = points.shifted(dt * vel_k3)
+    shift = math.ceil(math.max(math.abs(shifted_points.center - points.center))) - total_shift
+    velocity = extp_sgrid(velocity, int(shift))
+    vel_k4 = velocity.sample_in(shifted_points)
+
     # --- Combine points with RK4 scheme ---
     vel = (1/6.) * (vel_k1 + 2 * (vel_k2 + vel_k3) + vel_k4)
     new_points = points.shifted(dt * vel)

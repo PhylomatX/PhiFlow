@@ -87,6 +87,9 @@ class Geometry:
         inside_fraction = math.clip(inside_fraction, 0, 1)
         return inside_fraction
 
+    def shift_outward(self, location: Tensor) -> Tensor:
+        raise NotImplementedError(self.__class__)
+
     def bounding_radius(self) -> Tensor:
         """
         Returns the radius of a Sphere object that fully encloses this geometry.

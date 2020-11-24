@@ -60,4 +60,3 @@ Very close to the sphere center, the distance takes a constant value.
                and self._shape == other.shape \
                and math.all(self._radius == other.radius) \
                and math.all(self._center == other.center)
-

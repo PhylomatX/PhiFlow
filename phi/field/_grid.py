@@ -293,25 +293,32 @@ def extend_symmetric(resolution: Shape, bounds: AbstractBox, axis, cells=1):
 
 
 def extp_cgrid(cgrid: CenteredGrid, size: int = 1) -> CenteredGrid:
-    if size == 0:
+    if size <= 0:
         return cgrid
+    # rounding ensures a smooth impact of particles with velocity to particles with very small velocity
+    # TODO: for demonstration, show e.g. cgrid._values = math.round(cgrid.values)
+    rounded = math.round(cgrid.values)
     # extrapolation vertically and horizontally
-    values_l, values_r = math.shift(cgrid.values, (-1, 1))
+    values_l, values_r = math.shift(rounded, (-1, 1))
     where = partial(math.where, value_true=1, value_false=0)
     mask = math.sum(where(values_l) + where(values_r), axis='shift')
+    # calculate mean where extrapolated values overlap
     extp = math.divide_no_nan(math.sum(values_l + values_r, axis='shift'), mask)
     # extrapolate diagonally
     values_ll, values_lr = math.shift(values_l.shift[0], (-1, 1), dims='y')
     values_rl, values_rr = math.shift(values_r.shift[0], (-1, 1), dims='y')
     mask = where(values_ll) + where(values_lr) + where(values_rl) + where(values_rr)
+    # calculate mean where extrapolated values overlap
     extp_diag = math.divide_no_nan(values_ll + values_lr + values_rl + values_rr, mask).unstack('shift')[0]
     # prioritize results from vertical and horizontal shifting over diagonal shifting
     extp = math.where(extp, extp, extp_diag)
-    cgrid = CenteredGrid(math.where(cgrid.values, cgrid.values, extp), cgrid.box, cgrid.extrapolation)
-    return extp_cgrid(cgrid, size=size - 1)
+    new_cgrid = CenteredGrid(math.where(cgrid.values, cgrid.values, extp), cgrid.box, cgrid.extrapolation)
+    return extp_cgrid(new_cgrid, size=size - 1)
 
 
 def extp_sgrid(sgrid: StaggeredGrid, size: int = 1) -> StaggeredGrid:
+    if size <= 0:
+        return sgrid
     tensors = []
     for cgrid in sgrid.unstack('vector'):
         tensors.append(extp_cgrid(cgrid, size=size).values)

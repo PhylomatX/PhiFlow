@@ -66,9 +66,9 @@ class AbstractBox(Geometry):
 
     def approximate_signed_distance(self, location):
         """
-Computes the signed L-infinity norm (manhattan distance) from the location to the nearest side of the box.
-For an outside location `l` with the closest surface point `s`, the distance is `max(abs(l - s))`.
-For inside locations it is `-max(abs(l - s))`.
+        Computes the signed L-infinity norm (manhattan distance) from the location to the nearest side of the box.
+        For an outside location `l` with the closest surface point `s`, the distance is `max(abs(l - s))`.
+        For inside locations it is `-max(abs(l - s))`.
         :param location: float tensor of shape (batch_size, ..., rank)
         :return: float tensor of shape (*location.shape[:-1], 1).
         """
@@ -76,6 +76,16 @@ For inside locations it is `-max(abs(l - s))`.
         extent = self.upper - self.lower
         distance = math.abs(location - center) - extent * 0.5
         return math.max(distance, 'vector')
+
+    def shift_outward(self, location):
+        center = 0.5 * (self.lower + self.upper)
+        extent = self.upper - self.lower
+        loc_to_center = location - center
+        distance = math.abs(loc_to_center) - extent * 0.5
+        shift = math.where(distance == math.max(distance, 'vector'), distance, 0)
+        shift = math.where(shift < 0, shift, 0)
+        shift = math.where(loc_to_center < 0, 1, -1) * shift * 2
+        return shift
 
     def get_lower(self, axis):
         return self._get(self.lower, axis)

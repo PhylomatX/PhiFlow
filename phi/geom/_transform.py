@@ -55,6 +55,18 @@ class RotatedGeometry(Geometry):
     def approximate_signed_distance(self, location):
         return self.geometry.approximate_signed_distance(self.global_to_child(location))
 
+    def shift_outward(self, location):
+        shift = self.geometry.shift_outward(self.global_to_child(location))
+        sin = math.sin(self.angle)
+        cos = math.cos(self.angle)
+        y, x = shift.vector.unstack()
+        if GLOBAL_AXIS_ORDER.is_x_first:
+            x, y = y, x
+        rot_x = cos * x - sin * y
+        rot_y = sin * x + cos * y
+        shift = math.channel_stack([rot_y, rot_x], 'vector')
+        return shift
+
     def bounding_radius(self):
         return self.geometry.bounding_radius()
 
