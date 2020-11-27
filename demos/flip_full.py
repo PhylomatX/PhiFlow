@@ -4,14 +4,15 @@ from phi.field._point_cloud import _distribute_points
 
 # define world
 # size = (30, 400)
-size = (64, 64)
-domain = Domain(size, boundaries=CLOSED, bounds=Box(0, size))
+x = 64
+y = 64
+domain = Domain(x=x, y=y, boundaries=CLOSED, bounds=Box[0:x, 0:y])
 initial_density = domain.grid().values
 inflow = 0
 
 # block falls into pool
-initial_density.native()[size[-1] * 2 // 8: size[-1] * 6 // 8, size[-2] * 6 // 8: size[-2] * 7 // 8 - 1] = 1
-initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8: size[-2] * 2 // 8] = 1
+initial_density.native()[15:50, 45:55] = 1
+initial_density.native()[:, :15] = 1
 
 # large block falls to bottom
 # initial_density.native()[1:size[-1]-1, size[1]-30:size[1]-1] = 1
@@ -61,7 +62,6 @@ initial_points = _distribute_points(initial_density, 8)
 points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
 initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
 velocity = PointCloud(points.elements, values=initial_velocity)
-
 
 # initialize masks
 density = points.at(domain.grid())

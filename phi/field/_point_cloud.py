@@ -98,7 +98,7 @@ def _distribute_points(field: Tensor, points_per_cell: int = 1, dist: str = 'uni
         if dist == 'center':
             temp.append(indices)
         elif dist == 'uniform':
-            temp.append(indices + (math.random_uniform(indices.shape)-0.5))
+            temp.append(indices + (math.random_uniform(indices.shape)))
         else:
             raise NotImplementedError
     return math.concat(temp, dim='points')

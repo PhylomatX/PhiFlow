@@ -221,8 +221,8 @@ def point_plot(cloud, bounds):
         return {'data': [{'mode': 'markers', 'type': 'scatter', 'x': x, 'y': y}]}
     else:
         return {'data': [{'mode': 'markers', 'type': 'scatter', 'x': x, 'y': y}],
-                'layout': {'xaxis': {'range': [int(bounds.lower), int(bounds.upper[0])]},
-                           'yaxis': {'range': [int(bounds.lower), int(bounds.upper[1])]}}}
+                'layout': {'xaxis': {'range': [int(bounds.lower[0]), int(bounds.upper[0])]},
+                           'yaxis': {'range': [int(bounds.lower[1]), int(bounds.upper[1])]}}}
 
 
 def reduce_component(tensor, component):
