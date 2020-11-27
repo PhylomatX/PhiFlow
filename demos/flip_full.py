@@ -11,7 +11,7 @@ initial_density = domain.grid().values
 inflow = 0
 
 # block falls into pool
-initial_density.native()[15:50, 45:55] = 1
+initial_density.native()[25:39, 45:55] = 1
 initial_density.native()[:, :15] = 1
 
 # large block falls to bottom
@@ -58,8 +58,8 @@ initial_density.native()[:, :15] = 1
 
 # generate points
 initial_points = _distribute_points(initial_density, 8)
-# bounds = Box(-5, (70, 70))
-points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
+bounds = Box((-5, -5), (70, 70))
+points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=bounds)
 initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
 velocity = PointCloud(points.elements, values=initial_velocity)
 
@@ -74,9 +74,9 @@ szeros = domain.sgrid(0, extrapolation=density.extrapolation)
 smask = field.where(sdensity, sones, szeros)
 
 # define obstacles
-# obstacles = [Obstacle(Box[30:50, 30:40])]
-# obstacles = [Obstacle(Box[30:50, 30:40].rotated(20))]
 obstacles = ()
+# obstacles = [Obstacle(Box[20:50, 30:40])]
+obstacles = [Obstacle(Box[30:50, 30:40].rotated(40))]
 
 # define initial state
 state = dict(points=points, velocity=velocity, density=density, v_force_field=domain.sgrid(0), v_change_field=domain.sgrid(0),
@@ -124,10 +124,12 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
         new_velocity = math.tensor(math.concat([velocity.values, initial_velocity], dim='points'), names=['points', 'vector'])
         velocity = PointCloud(points.elements, values=new_velocity)
 
-    # check if particles are inside obstacles
+    # push particles inside obstacles outwards and particles outside domain inwards.
     for obstacle in obstacles:
-        shift = obstacle.geometry.shift_outward(points.elements.center)
+        shift = obstacle.geometry.shift_points(points.elements.center)
         points = PointCloud(points.elements.shifted(shift), add_overlapping=True, bounds=points.bounds)
+    shift = (~domain.bounds).shift_points(points.elements.center)
+    points = PointCloud(points.elements.shifted(shift), add_overlapping=True, bounds=points.bounds)
     velocity = PointCloud(points.elements, values=velocity.values)
 
     # get new velocity field
@@ -143,4 +145,4 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
 
 app = App()
 app.set_state(state, step_function=step, dt=0.1, show=['density', 'accessible', 'points', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'])
-show(app, display=('density', 'accessible', 'points', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'), port=8052)
+show(app, port=8052)

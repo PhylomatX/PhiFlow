@@ -87,7 +87,7 @@ class Geometry:
         inside_fraction = math.clip(inside_fraction, 0, 1)
         return inside_fraction
 
-    def shift_outward(self, location: Tensor) -> Tensor:
+    def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0.5) -> Tensor:
         raise NotImplementedError(self.__class__)
 
     def bounding_radius(self) -> Tensor:
@@ -165,6 +165,9 @@ class _InvertedGeometry(Geometry):
 
     def approximate_fraction_inside(self, other_geometry: Geometry) -> Tensor:
         return 1 - self.geometry.approximate_fraction_inside(other_geometry)
+
+    def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0.5) -> Tensor:
+        return self.geometry.shift_points(location, not outward, shift_amount=shift_amount)
 
     def bounding_radius(self) -> Tensor:
         raise NotImplementedError()

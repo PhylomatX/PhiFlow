@@ -697,12 +697,16 @@ def tensor(data: Tensor or Shape or tuple or list or numbers.Number,
             raise NotImplementedError(f"{array.dtype} dtype for iterable not allowed. Only np.object supported.")
             return TensorStack(tensor(data), dim_name=None, dim_type=CHANNEL_DIM)
     if isinstance(data, np.ndarray) and data.dtype != np.object:
+        dims = [CHANNEL_DIM] * len(data.shape)
         if names is None:
             assert data.ndim <= 1, "Specify dimension names for tensors with more than 1 dimension"
             names = ['vector'] * data.ndim
         else:
             names = _shape.parse_dim_names(names, len(data.shape))
-        shape = Shape(data.shape, names, [CHANNEL_DIM] * len(data.shape))
+        if 'points' in names:
+            index = names.index('points')
+            dims[index] = BATCH_DIM
+        shape = Shape(data.shape, names, dims)
         return NativeTensor(data, shape)
     if isinstance(data, numbers.Number):
         assert not names

@@ -1,7 +1,7 @@
 import warnings
 
 from phi import math
-from phi.math import GLOBAL_AXIS_ORDER
+from phi.math import GLOBAL_AXIS_ORDER, Tensor
 from ._geom import Geometry
 from ._sphere import Sphere
 
@@ -55,8 +55,8 @@ class RotatedGeometry(Geometry):
     def approximate_signed_distance(self, location):
         return self.geometry.approximate_signed_distance(self.global_to_child(location))
 
-    def shift_outward(self, location):
-        shift = self.geometry.shift_outward(self.global_to_child(location))
+    def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0.5):
+        shift = self.geometry.shift_points(self.global_to_child(location), outward=outward, shift_amount=shift_amount)
         sin = math.sin(self.angle)
         cos = math.cos(self.angle)
         y, x = shift.vector.unstack()

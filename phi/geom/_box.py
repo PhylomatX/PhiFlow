@@ -77,14 +77,20 @@ class AbstractBox(Geometry):
         distance = math.abs(location - center) - extent * 0.5
         return math.max(distance, 'vector')
 
-    def shift_outward(self, location):
+    def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0.5) -> Tensor:
         center = 0.5 * (self.lower + self.upper)
         extent = self.upper - self.lower
         loc_to_center = location - center
         distance = math.abs(loc_to_center) - extent * 0.5
-        shift = math.where(distance == math.max(distance, 'vector'), distance, 0)
-        shift = math.where(shift < 0, shift, 0)
-        shift = math.where(loc_to_center < 0, 1, -1) * shift * 2
+        if outward:
+            shift = math.where(distance == math.max(distance, 'vector'), distance, 0)
+            shift = math.where(shift < 0, shift, 0)
+            shift = math.where(loc_to_center < 0, 1, -1) * (shift - math.where(shift != 0, 1, 0) * shift_amount)
+        else:
+            shift = math.where(distance < 0, 0, distance)
+            shift += math.where(shift != 0, 1, 0) * shift_amount
+            shift = math.where(math.abs(shift) > math.abs(loc_to_center), math.abs(loc_to_center), shift)
+            shift = math.where(loc_to_center < 0, 1, -1) * shift
         return shift
 
     def get_lower(self, axis):
