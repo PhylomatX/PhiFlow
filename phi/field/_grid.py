@@ -95,7 +95,7 @@ class CenteredGrid(Grid):
     def sample_at(self, points, reduce_channels=()) -> Tensor:
         local_points = self.box.global_to_local(points)
         # TODO: The -0.5 here had a great effect
-        local_points = local_points * self.resolution
+        local_points = local_points * self.resolution - 0.5
         if len(reduce_channels) == 0:
             return math.grid_sample(self.values, local_points, self.extrapolation)
         else:
@@ -292,14 +292,17 @@ def extend_symmetric(resolution: Shape, bounds: AbstractBox, axis, cells=1):
     return resolution.with_sizes(ext_res), bounds
 
 
-def extp_cgrid(cgrid: CenteredGrid, size: int = 1) -> CenteredGrid:
+def extp_cgrid(cgrid: CenteredGrid, size: int = 1, rounded: bool = False) -> CenteredGrid:
     if size <= 0:
         return cgrid
     # rounding ensures a smooth impact of particles with velocity to particles with very small velocity
     # TODO: for demonstration, show e.g. cgrid._values = math.round(cgrid.values)
-    rounded = math.round(cgrid.values)
+    if rounded:
+        values = math.round(cgrid.values)
+    else:
+        values = cgrid.values
     # extrapolation vertically and horizontally
-    values_l, values_r = math.shift(rounded, (-1, 1))
+    values_l, values_r = math.shift(values, (-1, 1))
     where = partial(math.where, value_true=1, value_false=0)
     mask = math.sum(where(values_l) + where(values_r), axis='shift')
     # calculate mean where extrapolated values overlap
@@ -316,12 +319,12 @@ def extp_cgrid(cgrid: CenteredGrid, size: int = 1) -> CenteredGrid:
     return extp_cgrid(new_cgrid, size=size - 1)
 
 
-def extp_sgrid(sgrid: StaggeredGrid, size: int = 1) -> StaggeredGrid:
+def extp_sgrid(sgrid: StaggeredGrid, size: int = 1, rounded: bool = False) -> StaggeredGrid:
     if size <= 0:
         return sgrid
     tensors = []
     for cgrid in sgrid.unstack('vector'):
-        tensors.append(extp_cgrid(cgrid, size=size).values)
+        tensors.append(extp_cgrid(cgrid, size=size, rounded=rounded).values)
     return StaggeredGrid(math.channel_stack(tensors, 'vector'), sgrid.box, sgrid.extrapolation)
 
 

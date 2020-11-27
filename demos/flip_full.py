@@ -57,6 +57,7 @@ initial_density.native()[size[-1] * 0 // 8: size[-1] * 8 // 8, size[-2] * 0 // 8
 
 # generate points
 initial_points = _distribute_points(initial_density, 8)
+# bounds = Box(-5, (70, 70))
 points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
 initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
 velocity = PointCloud(points.elements, values=initial_velocity)
@@ -73,7 +74,8 @@ szeros = domain.sgrid(0, extrapolation=density.extrapolation)
 smask = field.where(sdensity, sones, szeros)
 
 # define obstacles
-# obstacles = [Obstacle(Box[30:50, 30:40]), Obstacle(Box[10:30, 10:15])]
+# obstacles = [Obstacle(Box[30:50, 30:40])]
+# obstacles = [Obstacle(Box[30:50, 30:40].rotated(20))]
 obstacles = ()
 
 # define initial state
@@ -99,7 +101,7 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
     v_force_field = field.extp_sgrid(v_force_field * smask, 2) * hard_bcs
     div = field.divergence(v_force_field) * cmask
     # TODO: Understand why -4 in pressure equation is necessary / Understand why multiplying div with cmask helps with +1 case
-    laplace = lambda p: field.where(cmask, field.divergence(field.gradient(p, type=StaggeredGrid) * domain.sgrid(1)), -4 * p)
+    laplace = lambda p: field.where(cmask, field.divergence(field.gradient(p, type=StaggeredGrid) * hard_bcs), -4 * p)
     converged, pressure, iterations = field.solve(laplace, div, pressure, solve_params=math.LinearSolve(None, 1e-3))
     gradp = field.gradient(pressure, type=type(v_force_field))
     v_div_free_field = v_force_field - gradp
