@@ -83,12 +83,16 @@ class AbstractBox(Geometry):
         loc_to_center = location - center
         distance = math.abs(loc_to_center) - extent * 0.5
         if outward:
+            # get shift towards nearest border
             shift = math.where(distance == math.max(distance, 'vector'), distance, 0)
+            # filter points inside
             shift = math.where(shift < 0, shift, 0)
+            # get shift direction
             shift = math.where(loc_to_center < 0, 1, -1) * (shift - math.where(shift != 0, 1, 0) * shift_amount)
         else:
             shift = math.where(distance < 0, 0, distance)
             shift += math.where(shift != 0, 1, 0) * shift_amount
+            # ensure inward shift ends at center
             shift = math.where(math.abs(shift) > math.abs(loc_to_center), math.abs(loc_to_center), shift)
             shift = math.where(loc_to_center < 0, 1, -1) * shift
         return shift

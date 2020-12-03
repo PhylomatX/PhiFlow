@@ -167,7 +167,7 @@ class _InvertedGeometry(Geometry):
         return 1 - self.geometry.approximate_fraction_inside(other_geometry)
 
     def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0.5) -> Tensor:
-        return self.geometry.shift_points(location, not outward, shift_amount=shift_amount)
+        return self.geometry.shift_points(location, outward=not outward, shift_amount=shift_amount)
 
     def bounding_radius(self) -> Tensor:
         raise NotImplementedError()
