@@ -146,4 +146,4 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
 
 app = App()
 app.set_state(state, step_function=step, dt=0.1, show=['density', 'accessible', 'points', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'])
-show(app, port=8052)
+show(app, display='density', port=8052)

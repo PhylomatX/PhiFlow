@@ -1,14 +1,16 @@
 import os
 import random
+import pickle as pkl
 from phi.flow import *
 import tensorflow as tf
-from typing import List, Union
+from typing import List, Union, Tuple
 from phi.math import Tensor
 from phi.physics._effect import Gravity, gravity_tensor
 from phi.field._point_cloud import _distribute_points
 
 
-def sim2example(domain: Domain, idensity: Tensor, duration: int = 100, step_size: Union[int, float] = 0.1, inflow: int = 0, obstacles: List[Obstacle] = None):
+def sim2example(domain: Domain, idensity: Tensor, duration: int = 100, step_size: Union[int, float] = 0.1, inflow: int = 0,
+                obstacles: List[Obstacle] = None, scale: List[float] = None):
     # generate points
     initial_points = _distribute_points(idensity, 8)
     points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
@@ -37,13 +39,18 @@ def sim2example(domain: Domain, idensity: Tensor, duration: int = 100, step_size
                  szeros=szeros, obstacles=obstacles, inflow=inflow, initial_points=initial_points,
                  initial_velocity=initial_velocity)
 
-    positions = np.zeros((duration, len(initial_points.native()), 2))
-    types = np.ones(len(initial_points.native()))
+    positions = np.zeros((duration, len(initial_points.native()), 2), dtype=np.float32)
+    types = np.ones(len(initial_points.native()), dtype=np.int64)
 
     for i in range(duration):
         state = step(dt=step_size, **state)
         velocity = state['velocity']
         positions[i, ...] = velocity.elements.center.native()
+
+    if scale is not None:
+        upper = domain.bounds.upper[0]
+        scale_factor = upper.numpy() / (scale[1]-scale[0])
+        positions = (positions / scale_factor) + scale[0]
 
     stypes = types.tobytes()
     spositions = positions.tobytes()
@@ -140,17 +147,25 @@ def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool
 x = 32
 y = 32
 domain = Domain(x=x, y=y, boundaries=CLOSED, bounds=Box[0:x, 0:y])
-steps = 10
+dataset_size = 100
+scale = [0.1, 0.9]
+sequence_length = 100
+dt = 0.1
 
 save_loc = os.path.expanduser('~/Projekte/BA/datasets/GNN_tests/test_set1/')
 if not os.path.exists(save_loc):
     os.makedirs(save_loc)
 examples = []
 
-for sim_ix in range(steps):
+for sim_ix in range(dataset_size):
     initial_density = random_scene(domain)
-    examples.append(sim2example(domain, initial_density, duration=101, step_size=0.1))
+    examples.append(sim2example(domain, initial_density, duration=sequence_length+1, step_size=dt, scale=scale))
 
 with tf.io.TFRecordWriter(save_loc + 'train.tfrecord') as writer:
     for example in examples:
         writer.write(example.SerializeToString())
+
+metadata = dict(bounds=[scale, scale], sequence_length=sequence_length, default_connectivity_radius=0.015, dim=2, dt=dt,
+                dataset_size=dataset_size)
+with open(save_loc + 'metadata.pkl', 'wb') as f:
+    pkl.dump(metadata, f)
