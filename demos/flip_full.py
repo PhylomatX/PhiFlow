@@ -114,8 +114,7 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
     velocity = velocity.values + v_change
 
     # advect
-    v_div_free_field *= hard_bcs * smask
-    points = advect.advect(points, v_div_free_field, dt)
+    points = advect.advect(points, v_div_free_field, dt, bcs=hard_bcs)
     velocity = PointCloud(points.elements, values=velocity)
 
     # add possible inflow

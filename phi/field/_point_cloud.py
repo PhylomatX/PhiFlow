@@ -96,7 +96,7 @@ def _distribute_points(field: Tensor, points_per_cell: int = 1, dist: str = 'uni
     temp = []
     for _ in range(points_per_cell):
         if dist == 'center':
-            temp.append(indices)
+            temp.append(indices + 0.5)
         elif dist == 'uniform':
             temp.append(indices + (math.random_uniform(indices.shape)))
         else:

@@ -13,21 +13,25 @@ from phi import math
 from phi.field import SampledField, ConstantField, StaggeredGrid, CenteredGrid, Grid, Field, PointCloud, extp_sgrid
 
 
-def advect(field: Field, velocity: Field, dt, simple: bool = False):
+def advect(field: Field, velocity: Field, dt, mode: str = 'rk4', bcs: Field = None):
     """
     Advect `field` along the `velocity` vectors using the default advection method.
     :param field: any built-in Field
     :param velocity: any Field
     :param dt: time increment
-    :param simple: flag for using simple advection schemes
+    :param mode: type of advection scheme
+    :param bcs: boundary conditions used only in rk4 advection
     :return: Advected field of same type as `field`
     """
     if isinstance(field, PointCloud):
         if isinstance(velocity, PointCloud) and velocity.elements == field.elements:
             return points(field, velocity, dt)
-        if simple:
+        if mode == 'euler':
             return euler(field, velocity, dt=dt)
-        return runge_kutta_4(field, velocity, dt=dt)
+        elif mode == 'rk4':
+            return runge_kutta_4(field, velocity, bcs=bcs, dt=dt)
+        else:
+            raise NotImplementedError(f"Advection mode {mode} is not known.")
     if isinstance(field, ConstantField):
         return field
     if isinstance(field, (CenteredGrid, StaggeredGrid)):
@@ -89,13 +93,12 @@ def euler(field: PointCloud, velocity: Field, dt):
     return PointCloud(new_points, field.values, field.extrapolation, add_overlapping=field._add_overlapping)
 
 
-def runge_kutta_4(field: PointCloud, velocity: StaggeredGrid, dt):
+def runge_kutta_4(field: PointCloud, velocity: StaggeredGrid, bcs: Field, dt):
     """
     Lagrangian advection of particles.
     :param field: SampledField with any number of components
-    :type field: SampledField
     :param velocity: Vector field
-    :type velocity: Field
+    :param bcs: boundary conditions
     :param dt: time increment
     :return: SampledField with same data as `field` but advected points
     """
@@ -105,26 +108,26 @@ def runge_kutta_4(field: PointCloud, velocity: StaggeredGrid, dt):
 
     # --- Sample velocity at intermediate points ---
     # At first step all points are inside velocity region
-    velocity = extp_sgrid(velocity, 2)
+    velocity = extp_sgrid(velocity, 2) * bcs
     vel_k1 = velocity.sample_in(points)
 
     # Adjust field extrapolation to maximum shift of secondary intermediate points
     shifted_points = points.shifted(0.5 * dt * vel_k1)
     shift = math.ceil(math.max(math.abs(shifted_points.center - points.center)))
     total_shift = shift
-    velocity = extp_sgrid(velocity, int(shift))
+    velocity = extp_sgrid(velocity, int(shift)) * bcs
     vel_k2 = velocity.sample_in(shifted_points)
 
     # Same for points of third and fourth component
     shifted_points = points.shifted(0.5 * dt * vel_k2)
     shift = math.ceil(math.max(math.abs(shifted_points.center - points.center))) - total_shift
     total_shift += shift
-    velocity = extp_sgrid(velocity, int(shift))
+    velocity = extp_sgrid(velocity, int(shift)) * bcs
     vel_k3 = velocity.sample_in(shifted_points)
 
     shifted_points = points.shifted(dt * vel_k3)
     shift = math.ceil(math.max(math.abs(shifted_points.center - points.center))) - total_shift
-    velocity = extp_sgrid(velocity, int(shift))
+    velocity = extp_sgrid(velocity, int(shift)) * bcs
     vel_k4 = velocity.sample_in(shifted_points)
 
     # --- Combine points with RK4 scheme ---

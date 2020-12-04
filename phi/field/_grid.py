@@ -291,39 +291,54 @@ def extend_symmetric(resolution: Shape, bounds: AbstractBox, axis, cells=1):
     return resolution.with_sizes(ext_res), bounds
 
 
-def extp_cgrid(cgrid: CenteredGrid, size: int = 1, rounded: bool = False) -> CenteredGrid:
+def extp_cgrid(cgrid: CenteredGrid, size: int = 1) -> CenteredGrid:
+    """
+    Extrapolates nonzero values of a CenteredGrid `size` steps in all directions
+    (horizontal, vertical and diagonal) without overwritten nonzero grid points.
+    Zero values get overwritten. Overlapping extrapolations get averaged.
+    :param cgrid: CenteredGrid where the values should be extrapolated
+    :param size: number of extrapolation steps in all directions
+    :return: Extrapolated CenteredGrid
+    """
     if size <= 0:
         return cgrid
-    # rounding ensures a smooth impact of particles with velocity to particles with very small velocity
-    # TODO: for demonstration, show e.g. cgrid._values = math.round(cgrid.values)
-    if rounded:
-        values = math.round(cgrid.values)
-    else:
-        values = cgrid.values
     # extrapolation vertically and horizontally
-    values_l, values_r = math.shift(values, (-1, 1))
+    values_l, values_r = math.shift(cgrid.values, (-1, 1))
     where = partial(math.where, value_true=1, value_false=0)
-    mask = math.sum(where(values_l) + where(values_r), axis='shift')
+    overlap = math.sum(where(values_l) + where(values_r), axis='shift')
     # calculate mean where extrapolated values overlap
-    extp = math.divide_no_nan(math.sum(values_l + values_r, axis='shift'), mask)
-    # extrapolate diagonally
+    extp = math.divide_no_nan(math.sum(values_l + values_r, axis='shift'), overlap)
+    # extrapolate diagonally (double y because the up component of the vertical shift (y-direction)
+    # gets shifted left and right as well as the down component => all diagonals reached. This could
+    # also be done by using double x shifts).
     values_ll, values_lr = math.shift(values_l.shift[0], (-1, 1), dims='y')
     values_rl, values_rr = math.shift(values_r.shift[0], (-1, 1), dims='y')
-    mask = where(values_ll) + where(values_lr) + where(values_rl) + where(values_rr)
-    # calculate mean where extrapolated values overlap
-    extp_diag = math.divide_no_nan(values_ll + values_lr + values_rl + values_rr, mask).unstack('shift')[0]
+    overlap = where(values_ll) + where(values_lr) + where(values_rl) + where(values_rr)
+    # calculate mean where extrapolated values overlap (shift axis has only one component)
+    extp_diag = math.divide_no_nan(values_ll + values_lr + values_rl + values_rr, overlap).unstack('shift')[0]
     # prioritize results from vertical and horizontal shifting over diagonal shifting
     extp = math.where(extp, extp, extp_diag)
+    # do not overwrite existing nonzero values of the grid (zero values get overwritten)
     new_cgrid = CenteredGrid(math.where(cgrid.values, cgrid.values, extp), cgrid.box, cgrid.extrapolation)
+    # perform multiple extrapolation steps recursively
     return extp_cgrid(new_cgrid, size=size - 1)
 
 
-def extp_sgrid(sgrid: StaggeredGrid, size: int = 1, rounded: bool = False) -> StaggeredGrid:
+def extp_sgrid(sgrid: StaggeredGrid, size: int = 1) -> StaggeredGrid:
+    """
+    Extrapolates nonzero values of a StaggeredGrid `size` steps in all directions
+    (horizontal, vertical and diagonal) without overwriting any nonzero grid points.
+    Overlapping extrapolations get averaged. The StaggeredGrid is split into its
+    CenteredGrid components (along 'vector' dim) which get extrapolated independently.
+    :param sgrid: StaggeredGrid where the values should be extrapolated
+    :param size: number of extrapolation steps in all directions
+    :return: Extrapolated StaggeredGrid
+    """
     if size <= 0:
         return sgrid
     tensors = []
     for cgrid in sgrid.unstack('vector'):
-        tensors.append(extp_cgrid(cgrid, size=size, rounded=rounded).values)
+        tensors.append(extp_cgrid(cgrid, size=size).values)
     return StaggeredGrid(math.channel_stack(tensors, 'vector'), sgrid.box, sgrid.extrapolation)
 
 
