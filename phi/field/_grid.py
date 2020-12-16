@@ -294,12 +294,14 @@ def extend_symmetric(resolution: Shape, bounds: AbstractBox, axis, cells=1):
 def extp_cgrid(cgrid: CenteredGrid, size: int = 1) -> CenteredGrid:
     """
     Extrapolates nonzero values of a CenteredGrid `size` steps in all directions
-    (horizontal, vertical and diagonal) without overwritten nonzero grid points.
+    (horizontal, vertical and diagonal) without overwriting nonzero grid points.
     Zero values get overwritten. Overlapping extrapolations get averaged.
     :param cgrid: CenteredGrid where the values should be extrapolated
     :param size: number of extrapolation steps in all directions
     :return: Extrapolated CenteredGrid
     """
+    # TODO: Add mask parameter which makes clear which values should stay fixed
+    #  (e.g. don't overwrite some zero values)
     if size <= 0:
         return cgrid
     # extrapolation vertically and horizontally

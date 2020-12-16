@@ -19,7 +19,7 @@ def advect(field: Field, velocity: Field, dt, mode: str = 'rk4', bcs: Field = No
     :param field: any built-in Field
     :param velocity: any Field
     :param dt: time increment
-    :param mode: type of advection scheme
+    :param mode: type of advection scheme (e.g. 'euler', 'rk4', 'rk4_extp')
     :param bcs: boundary conditions used only in rk4 advection
     :return: Advected field of same type as `field`
     """
@@ -29,7 +29,9 @@ def advect(field: Field, velocity: Field, dt, mode: str = 'rk4', bcs: Field = No
         if mode == 'euler':
             return euler(field, velocity, dt=dt)
         elif mode == 'rk4':
-            return runge_kutta_4(field, velocity, bcs=bcs, dt=dt)
+            return runge_kutta_4(field, velocity, dt=dt)
+        elif mode == 'rk4_extp':
+            return runge_kutta_4_extp(field, velocity, bcs=bcs, dt=dt)
         else:
             raise NotImplementedError(f"Advection mode {mode} is not known.")
     if isinstance(field, ConstantField):
@@ -93,9 +95,33 @@ def euler(field: PointCloud, velocity: Field, dt):
     return PointCloud(new_points, field.values, field.extrapolation, add_overlapping=field._add_overlapping)
 
 
-def runge_kutta_4(field: PointCloud, velocity: StaggeredGrid, bcs: Field, dt):
+def runge_kutta_4(field: PointCloud, velocity: Field, dt):
     """
     Lagrangian advection of particles.
+    :param field: SampledField with any number of components
+    :type field: SampledField
+    :param velocity: Vector field
+    :type velocity: Field
+    :param dt: time increment
+    :return: SampledField with same data as `field` but advected points
+    """
+    assert isinstance(field, SampledField)
+    assert isinstance(velocity, Field)
+    points = field.elements
+    # --- Sample velocity at intermediate points ---
+    vel_k1 = velocity.sample_in(points)
+    vel_k2 = velocity.sample_in(points.shifted(0.5 * dt * vel_k1))
+    vel_k3 = velocity.sample_in(points.shifted(0.5 * dt * vel_k2))
+    vel_k4 = velocity.sample_in(points.shifted(dt * vel_k3))
+    # --- Combine points with RK4 scheme ---
+    vel = (1/6.) * (vel_k1 + 2 * (vel_k2 + vel_k3) + vel_k4)
+    new_points = points.shifted(dt * vel)
+    return PointCloud(new_points, field.values, field.extrapolation, add_overlapping=field._add_overlapping, bounds=field.bounds)
+
+
+def runge_kutta_4_extp(field: PointCloud, velocity: Field, bcs: Field, dt):
+    """
+    Lagrangian advection of particles with velocity dependent extrapolation.
     :param field: SampledField with any number of components
     :param velocity: Vector field
     :param bcs: boundary conditions
@@ -103,7 +129,7 @@ def runge_kutta_4(field: PointCloud, velocity: StaggeredGrid, bcs: Field, dt):
     :return: SampledField with same data as `field` but advected points
     """
     assert isinstance(field, SampledField)
-    assert isinstance(velocity, StaggeredGrid), 'runge_kutta advection works for StaggeredGrids only.'
+    assert isinstance(velocity, StaggeredGrid), 'runge_kutta advection with extrapolation works for StaggeredGrids only.'
     points = field.elements
 
     # --- Sample velocity at intermediate points ---

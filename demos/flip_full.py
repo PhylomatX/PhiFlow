@@ -4,7 +4,7 @@ from phi.field._point_cloud import _distribute_points
 
 # define world
 # size = (30, 400)
-x = 66
+x = 64
 y = 64
 size = [x, y]
 domain = Domain(x=x, y=y, boundaries=CLOSED, bounds=Box[0:x, 0:y])
@@ -12,11 +12,11 @@ initial_density = domain.grid().values
 inflow = 0
 
 # block falls into pool
-# initial_density.native()[25:39, 45:55] = 1
-# initial_density.native()[:, :15] = 1
+initial_density.native()[20:50, 45:55] = 1
+initial_density.native()[:, :15] = 1
 
 # large block falls to bottom
-# initial_density.native()[1:size[-1]-1, size[1]-30:size[1]-1] = 1
+# initial_density.native()[12:25, 20:30] = 1
 
 # small block (or inflow) to bottom
 # initial_density.native()[20:50, 55:62] = 8
@@ -40,7 +40,7 @@ inflow = 0
 # initial_density.native()[54:64, 0:60] = 1
 
 # tower in the middle
-initial_density.native()[30:36, 0:60] = 1
+# initial_density.native()[30:36, 0:60] = 1
 
 # multiple small blocks in different heights
 # initial_density.native()[1:10, 20:30] = 1
@@ -58,9 +58,9 @@ initial_density.native()[30:36, 0:60] = 1
 
 
 # generate points
-initial_points = _distribute_points(initial_density, 8, dist='center')
-bounds = Box((-5, -5), (70, 70))
-points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=bounds)
+initial_points = _distribute_points(initial_density, 8)
+# bounds = Box((-5, -5), (70, 70))
+points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
 initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
 velocity = PointCloud(points.elements, values=initial_velocity)
 
@@ -76,13 +76,14 @@ smask = field.where(sdensity, sones, szeros)
 
 # define obstacles
 obstacles = ()
-# obstacles = [Obstacle(Box[20:50, 30:40])]
+# obstacles = [Obstacle(Box[25:45, 35:39].rotated(-40)), Obstacle(Box[10:25, 10:15].rotated(40))]
 # obstacles = [Obstacle(Box[30:50, 30:40].rotated(40))]
 
 # define initial state
 state = dict(points=points, velocity=velocity, density=density, v_force_field=domain.sgrid(0), v_change_field=domain.sgrid(0),
              v_div_free_field=domain.sgrid(0), v_field=velocity.at(domain.sgrid()), pressure=domain.grid(0),
-             divergence=domain.grid(0), smask=smask, cmask=cmask, accessible=domain.grid(0), iter=0)
+             divergence=domain.grid(0), smask=smask, cmask=cmask, accessible=domain.grid(0), iter=0, symmetry=domain.grid(0),
+             hard_bcs=domain.sgrid(0))
 
 
 def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs):
@@ -98,23 +99,26 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
     v_force_field = (v_field + force)
 
     # solve pressure
-    # this solves the distortion issue of a falling block by extrapolating the velocity field so that divergence and pressure lay outside of active mask
-    v_force_field = field.extp_sgrid(v_force_field * smask, 2) * hard_bcs
-    div = field.divergence(v_force_field) * cmask
-    # TODO: Understand why -4 in pressure equation is necessary / Understand why multiplying div with cmask helps with +1 case
-    laplace = lambda p: field.where(cmask, field.divergence(field.gradient(p, type=StaggeredGrid) * hard_bcs), -4 * p)
+    v_force_field = field.extp_sgrid(v_force_field * smask, 1) * hard_bcs  # conserves falling shapes
+    div = field.divergence(v_force_field) * cmask  # cmask prevents falling shape from collapsing
+    # TODO: prefactor of pressure should not have any effect, but it has
+    laplace = lambda p: field.where(cmask, field.divergence(field.gradient(p, type=StaggeredGrid) * hard_bcs), 1e6 * p)
     converged, pressure, iterations = field.solve(laplace, div, pressure, solve_params=math.LinearSolve(None, 1e-5))
     gradp = field.gradient(pressure, type=type(v_force_field))
     v_div_free_field = v_force_field - gradp
 
     # update velocities
     v_change_field = v_div_free_field - v_field
-    v_change_field = field.extp_sgrid(v_change_field * smask, 2)
+    v_change_field = field.extp_sgrid(v_change_field * smask, 1)  # conserves falling shapes (no hard_bcs here!)
     v_change = v_change_field.sample_at(points.elements.center)
     velocity = velocity.values + v_change
 
+    # PIC
+    # v_div_free_field = field.extp_sgrid(v_div_free_field * smask, 1)
+    # velocity = v_div_free_field.sample_at(points.elements.center)
+
     # advect
-    points = advect.advect(points, v_div_free_field, dt, bcs=hard_bcs)
+    points = advect.advect(points, v_div_free_field, dt, bcs=hard_bcs, mode='rk4_extp')
     velocity = PointCloud(points.elements, values=velocity)
 
     # add possible inflow
@@ -126,23 +130,26 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, **kwargs
 
     # push particles inside obstacles outwards and particles outside domain inwards.
     for obstacle in obstacles:
-        shift = obstacle.geometry.shift_points(points.elements.center, shift_amount=0)
+        shift = obstacle.geometry.shift_points(points.elements.center, shift_amount=0.5)
         points = PointCloud(points.elements.shifted(shift), add_overlapping=True, bounds=points.bounds)
-    shift = (~domain.bounds).shift_points(points.elements.center, shift_amount=0)
+    shift = (~domain.bounds).shift_points(points.elements.center)
     points = PointCloud(points.elements.shifted(shift), add_overlapping=True, bounds=points.bounds)
     velocity = PointCloud(points.elements, values=velocity.values)
 
     # get new velocity field
     v_field = velocity.at(domain.sgrid())
 
+    symmetry = points.at(domain.grid())
+    symmetry.values.native()[:] = symmetry.values.native()-symmetry.values.native()[::-1]
+
     return dict(points=points, velocity=velocity, v_field=v_field, v_force_field=v_force_field, v_change_field=v_change_field,
-                v_div_free_field=v_div_free_field, density=points.at(domain.grid()), pressure=pressure,
-                divergence=div, smask=smask, cmask=cmask, accessible=accessible * 2 + cmask, iter=iter+1)
+                v_div_free_field=v_div_free_field, density=points.at(domain.grid()), pressure=pressure, divergence=div, smask=smask,
+                cmask=cmask, accessible=accessible * 2 + cmask, iter=iter+1, symmetry=symmetry, hard_bcs=hard_bcs)
 
 
 # for i in range(500):
 #     state = step(dt=0.1, **state)
 
 app = App()
-app.set_state(state, step_function=step, dt=0.1, show=['density', 'accessible', 'points', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'])
+app.set_state(state, step_function=step, dt=0.1, show=['symmetry', 'hard_bcs', 'density', 'accessible', 'points', 'v_field', 'v_force_field', 'v_change_field', 'v_div_free_field', 'pressure', 'divergence', 'cmask', 'smask'])
 show(app, display='density', port=8052)

@@ -77,7 +77,7 @@ class AbstractBox(Geometry):
         distance = math.abs(location - center) - extent * 0.5
         return math.max(distance, 'vector')
 
-    def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0.5) -> Tensor:
+    def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0) -> Tensor:
         center = 0.5 * (self.lower + self.upper)
         extent = self.upper - self.lower
         loc_to_center = location - center

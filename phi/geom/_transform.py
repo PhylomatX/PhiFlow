@@ -55,7 +55,7 @@ class RotatedGeometry(Geometry):
     def approximate_signed_distance(self, location):
         return self.geometry.approximate_signed_distance(self.global_to_child(location))
 
-    def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0.5):
+    def shift_points(self, location: Tensor, outward: bool = True, shift_amount: float = 0):
         shift = self.geometry.shift_points(self.global_to_child(location), outward=outward, shift_amount=shift_amount)
         sin = math.sin(self.angle)
         cos = math.cos(self.angle)
