@@ -15,6 +15,8 @@ from absl import flags
 
 flags.DEFINE_string("save_path", None, help="Path where record should get saved.")
 flags.DEFINE_string("name", None, help="Name of file.")
+flags.DEFINE_integer("size", 50, help="Number of examples")
+flags.DEFINE_integer("duration", 200, help="Number of examples")
 FLAGS = flags.FLAGS
 
 
@@ -195,9 +197,9 @@ def main(_):
     x = 32
     y = 32
     domain = Domain(x=x, y=y, boundaries=CLOSED, bounds=Box[0:x, 0:y])
-    dataset_size = 2
+    dataset_size = FLAGS.size
     scale = [0.1, 0.9]
-    sequence_length = 200
+    sequence_length = FLAGS.duration
     dt = 0.05
 
     examples = []
