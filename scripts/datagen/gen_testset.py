@@ -1,20 +1,32 @@
 import os
 import random
+import json
 import pickle as pkl
 from phi.flow import *
 import tensorflow as tf
 from typing import List, Union, Tuple
 from phi.math import Tensor
+from utils import Welford
 from phi.physics._effect import Gravity, gravity_tensor
 from phi.field._point_cloud import _distribute_points
+
+from absl import app
+from absl import flags
+
+flags.DEFINE_string("save_path", None, help="Path where record should get saved.")
+flags.DEFINE_string("name", None, help="Name of file.")
+FLAGS = flags.FLAGS
 
 
 def time_diff(input_sequence):
     return input_sequence[1:, ...] - input_sequence[:-1, ...]
 
 
-def sim2file(domain: Domain, idensity: Tensor, duration: int = 100, step_size: Union[int, float] = 0.1, inflow: int = 0,
-             obstacles: List[Obstacle] = None, scale: List[float] = None, pic: bool = False, tf_example: bool = True, vel: np.ndarray = None):
+def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
+             step_size: Union[int, float] = 0.1, inflow: int = 0,
+             obstacles: List[Obstacle] = None, scale: List[float] = None,
+             pic: bool = False, tf_example: bool = True, vel: np.ndarray = None,
+             particle_num_wf: Welford = None, vel_wf: Welford = None, acc_wf: Welford = None):
     # generate points
     initial_points = _distribute_points(idensity, 8)
     points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
@@ -46,7 +58,7 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100, step_size: U
     # define initial state
     state = dict(points=points, velocity=velocity, density=density, v_force_field=domain.sgrid(0),
                  v_change_field=domain.sgrid(0), v_div_free_field=domain.sgrid(0), v_field=velocity.at(domain.sgrid()),
-                 pressure=domain.grid(0),  divergence=domain.grid(0), smask=smask, cmask=cmask,
+                 pressure=domain.grid(0), divergence=domain.grid(0), smask=smask, cmask=cmask,
                  accessible=domain.grid(0), iter=0, domain=domain, ones=ones, zeros=zeros, sones=sones,
                  szeros=szeros, obstacles=obstacles, inflow=inflow, initial_points=initial_points,
                  initial_velocity=initial_velocity, pic=pic)
@@ -63,19 +75,17 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100, step_size: U
 
     if scale is not None:
         upper = domain.bounds.upper[0]
-        scale_factor = upper.numpy() / (scale[1]-scale[0])
+        scale_factor = upper.numpy() / (scale[1] - scale[0])
         positions = (positions / scale_factor) + scale[0]
 
     vels = time_diff(positions)
-    accs = time_diff(vels)
-    vels_squared = vels * vels
-    accs_squared = accs * accs
-    vel_sum = vels.sum(axis=0).sum(axis=0)
-    acc_sum = accs.sum(axis=0).sum(axis=0)
-    vel_sqr_sum = vels_squared.sum(axis=0).sum(axis=0)
-    acc_sqr_sum = accs_squared.sum(axis=0).sum(axis=0)
-    vel_num = vels.shape[0] * vels.shape[1]
-    acc_num = accs.shape[0] * accs.shape[1]
+    if vel_wf is not None:
+        vel_wf.addAll(vels.reshape(-1, 2))
+    if acc_wf is not None:
+        accs = time_diff(vels)
+        acc_wf.addAll(accs.reshape(-1, 2))
+    if particle_num_wf is not None:
+        particle_num_wf.add(vels.shape[1])
 
     if tf_example:
         stypes = types.tobytes()
@@ -88,9 +98,9 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100, step_size: U
         positions_featlist = tf.train.FeatureList(feature=[positions_feat])
         positions_featlists = tf.train.FeatureLists(feature_list=dict(position=positions_featlist))
 
-        return tf.train.SequenceExample(context=types_feats, feature_lists=positions_featlists), vel_sum, vel_num, acc_sum, acc_num, vel_sqr_sum, acc_sqr_sum
+        return tf.train.SequenceExample(context=types_feats, feature_lists=positions_featlists), vel_wf, acc_wf, particle_num_wf
     else:
-        return positions, types, vel_sum, vel_num, acc_sum, acc_num, vel_sqr_sum, acc_sqr_sum
+        return positions, types, vel_wf, acc_wf
 
 
 def step(points, velocity, v_field, pressure, dt, iter, density, cmask, ones, zeros, domain, sones, szeros, obstacles,
@@ -133,7 +143,8 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, ones, ze
     if iter < inflow:
         new_points = math.tensor(math.concat([points.points, initial_points], dim='points'), names=['points', 'vector'])
         points = PointCloud(Sphere(new_points, 0), add_overlapping=True, bounds=points.bounds)
-        new_velocity = math.tensor(math.concat([velocity.values, initial_velocity], dim='points'), names=['points', 'vector'])
+        new_velocity = math.tensor(math.concat([velocity.values, initial_velocity], dim='points'),
+                                   names=['points', 'vector'])
         velocity = PointCloud(points.elements, values=new_velocity)
 
     # push particles inside obstacles outwards and particles outside domain inwards.
@@ -147,10 +158,12 @@ def step(points, velocity, v_field, pressure, dt, iter, density, cmask, ones, ze
     # get new velocity field
     v_field = velocity.at(domain.sgrid())
 
-    return dict(points=points, velocity=velocity, v_field=v_field, v_force_field=v_force_field, v_change_field=v_change_field,
+    return dict(points=points, velocity=velocity, v_field=v_field, v_force_field=v_force_field,
+                v_change_field=v_change_field,
                 v_div_free_field=v_div_free_field, density=points.at(domain.grid()), pressure=pressure, divergence=div,
                 smask=smask, cmask=cmask, accessible=accessible * 2 + cmask, iter=iter + 1, ones=ones, zeros=zeros,
-                domain=domain, sones=sones, szeros=szeros, obstacles=obstacles, inflow=inflow, initial_velocity=initial_velocity,
+                domain=domain, sones=sones, szeros=szeros, obstacles=obstacles, inflow=inflow,
+                initial_velocity=initial_velocity,
                 initial_points=initial_points, pic=pic)
 
 
@@ -168,77 +181,45 @@ def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool
     if multiple_blocks < multiple_blocks_prob:
         block_num = random.randint(block_num_min, block_num_max)
     for i in range(block_num):
-        block_ly = random.randint(block_min, size - block_size_max - wall_distance)
-        block_lx = random.randint(1, size - block_size_max - wall_distance)
-        block_uy = random.randint(block_ly + block_size_min, block_ly + block_size_max)
-        block_ux = random.randint(block_lx + block_size_min, block_lx + block_size_max)
+        block_ly = random.randint(block_min, size - block_size_min - wall_distance)
+        block_lx = random.randint(1, size - block_size_min - wall_distance)
+        block_uy = random.randint(block_ly + block_size_min, min(block_ly + block_size_max, size - wall_distance))
+        block_ux = random.randint(block_lx + block_size_min, min(block_lx + block_size_max, size - wall_distance))
         initial_density.native()[block_lx:block_ux, block_ly:block_uy] = 1
     # ensure that no block sticks at top
-    initial_density.native()[:, size-1] = 0
+    initial_density.native()[:, size - 1] = 0
     return initial_density
 
 
-x = 64
-y = 64
-domain = Domain(x=x, y=y, boundaries=CLOSED, bounds=Box[0:x, 0:y])
-dataset_size = 5
-scale = [0.1, 0.9]
-sequence_length = 100
-dt = 0.1
+def main(_):
+    x = 32
+    y = 32
+    domain = Domain(x=x, y=y, boundaries=CLOSED, bounds=Box[0:x, 0:y])
+    dataset_size = 2
+    scale = [0.1, 0.9]
+    sequence_length = 200
+    dt = 0.05
 
-save_loc = os.path.expanduser('~/Projekte/BA/datasets/GNN_tests/training_set1/')
-if not os.path.exists(save_loc):
-    os.makedirs(save_loc)
+    examples = []
+    vel_wf = Welford()
+    acc_wf = Welford()
+    particle_num_wf = Welford()
 
-# initial_density = domain.grid().values
-#
-# initial_density.native()[10:30, 30:50] = 1
-# vel = np.array([20, 0])
-#
-# # initial_density.native()[:, :15] = 1
-# # initial_density.native()[20:50, 45:60] = 1
-# obstacles = [Obstacle(Box[40:42, 10:60])]
-# # obstacles = ()
-# random.seed = 1
-# np.random.seed(1)
-# flip, types = sim2file(domain, initial_density, duration=sequence_length + 1, step_size=dt, scale=None, tf_example=False, vel=vel, obstacles=obstacles)
-# pic, _ = sim2file(domain, initial_density, duration=sequence_length + 1, step_size=dt, scale=None, tf_example=False, pic=True, vel=vel, obstacles=obstacles)
-#
-# sims = dict(flip=flip, pic=pic, types=types)
-# with open(save_loc + 'scene_4.pkl', 'wb') as f:
-#     pkl.dump(sims, f)
+    for sim_ix in range(dataset_size):
+        initial_density = random_scene(domain, pool_prob=0, block_num_max=1, block_size_max=8, block_size_min=8)
+        example, vel_wf, acc_wf, particle_num_wf = sim2file(domain, initial_density, duration=sequence_length + 1,
+                                                            step_size=dt, scale=scale, particle_num_wf=particle_num_wf,
+                                                            vel_wf=vel_wf, acc_wf=acc_wf)
+        examples.append(example)
 
-examples = []
-tvel_sum = np.array([0, 0])
-tvel_sqr_sum = np.array([0, 0])
-tacc_sum = np.array([0, 0])
-tacc_sqr_sum = np.array([0, 0])
-tvel_num = 0
-tacc_num = 0
+    metadata = dict(bounds=[scale, scale], sequence_length=sequence_length, default_connectivity_radius=0.015, dim=2, dt=dt,
+                    dataset_size=dataset_size, vel_wf=vel_wf, acc_wf=acc_wf, particle_num_wf=particle_num_wf, examples=examples)
 
-for sim_ix in range(dataset_size):
-    initial_density = random_scene(domain)
-    example, vel_sum, vel_num, acc_sum, acc_num, vel_sqr_sum, acc_sqr_sum = \
-        sim2file(domain, initial_density, duration=sequence_length + 1, step_size=dt, scale=scale)
-    examples.append(example)
-    tvel_sum += vel_sum
-    tacc_sum += acc_sum
-    tvel_num += vel_num
-    tacc_num += acc_num
-    tvel_sqr_sum += vel_sqr_sum
-    tacc_sqr_sum += acc_sqr_sum
+    if not os.path.exists(FLAGS.save_path):
+        os.makedirs(FLAGS.save_path)
+    with open(os.path.join(FLAGS.save_path, FLAGS.name) + '.pkl', 'wb') as f:
+        pkl.dump(metadata, f)
 
-with tf.io.TFRecordWriter(save_loc + 'train.tfrecord') as writer:
-    for example in examples:
-        writer.write(example.SerializeToString())
 
-vel_mean = tvel_sum / tvel_num
-acc_mean = tacc_sum / tacc_num
-vel_std = np.sqrt(tvel_sqr_sum / tvel_num - vel_mean * vel_mean)
-acc_std = np.sqrt(tacc_sqr_sum / tacc_num - acc_mean * acc_mean)
-
-metadata = dict(bounds=[scale, scale], sequence_length=sequence_length, default_connectivity_radius=0.015, dim=2, dt=dt,
-                dataset_size=dataset_size)
-with open(save_loc + 'metadata.pkl', 'wb') as f:
-    pkl.dump(metadata, f)
-
+if __name__ == '__main__':
+    app.run(main)
