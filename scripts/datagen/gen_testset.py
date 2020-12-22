@@ -17,6 +17,7 @@ flags.DEFINE_string("save_path", None, help="Path where record should get saved.
 flags.DEFINE_string("name", None, help="Name of file.")
 flags.DEFINE_integer("size", 50, help="Number of examples")
 flags.DEFINE_integer("duration", 200, help="Number of examples")
+flags.DEFINE_integer("seed", 1, help="Random seed")
 FLAGS = flags.FLAGS
 
 
@@ -207,8 +208,11 @@ def main(_):
     acc_wf = Welford()
     particle_num_wf = Welford()
 
+    random.seed(FLAGS.seed)
+    np.random.seed(FLAGS.seed)
+
     for sim_ix in range(dataset_size):
-        initial_density = random_scene(domain, pool_prob=0, block_num_max=1, block_size_max=8, block_size_min=8)
+        initial_density = random_scene(domain, pool_max=8, block_num_max=2, multiple_blocks_prob=0.3, block_size_max=15, block_size_min=2)
         example, vel_wf, acc_wf, particle_num_wf = sim2file(domain, initial_density, duration=sequence_length + 1,
                                                             step_size=dt, scale=scale, particle_num_wf=particle_num_wf,
                                                             vel_wf=vel_wf, acc_wf=acc_wf)
