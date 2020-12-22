@@ -37,6 +37,10 @@ class PointCloud(SampledField):
     def bounds(self) -> Box:
         return self._bounds
 
+    @property
+    def add_overlapping(self) -> bool:
+        return self._add_overlapping
+
     def sample_in(self, geometry: Geometry, reduce_channels=()) -> Tensor:
         if not reduce_channels:
             if geometry == self.elements:

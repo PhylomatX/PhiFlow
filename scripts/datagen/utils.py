@@ -1,4 +1,29 @@
-import numpy as np
+import random
+from phi.flow import *
+
+
+def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool_max: int = 8,
+                 block_min: int = 0, block_size_max: int = 20, block_size_min: int = 5, wall_distance: int = 2,
+                 block_num_min: int = 1, block_num_max: int = 2, multiple_blocks_prob: float = 0):
+    size = int(domain.bounds.upper[0])
+    initial_density = domain.grid().values
+    pool = random.random()
+    if pool < pool_prob:
+        pool_height = random.randint(pool_min, pool_max)
+        initial_density.native()[:, :pool_height] = 1
+    multiple_blocks = random.random()
+    block_num = 1
+    if multiple_blocks < multiple_blocks_prob:
+        block_num = random.randint(block_num_min, block_num_max)
+    for i in range(block_num):
+        block_ly = random.randint(block_min, size - block_size_min - wall_distance)
+        block_lx = random.randint(1, size - block_size_min - wall_distance)
+        block_uy = random.randint(block_ly + block_size_min, min(block_ly + block_size_max, size - wall_distance))
+        block_ux = random.randint(block_lx + block_size_min, min(block_lx + block_size_max, size - wall_distance))
+        initial_density.native()[block_lx:block_ux, block_ly:block_uy] = 1
+    # ensure that no block sticks at top
+    initial_density.native()[:, size - 1] = 0
+    return initial_density
 
 
 class Welford:
