@@ -101,13 +101,14 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
 
 def step(velocity, v_field, pressure, t, ones, zeros, domain, sones, szeros, obstacles,
          inflow, initial_velocity, initial_points, pic, dt):
-    # get domain
+
+    # get liquid masks
     cmask = field.where(PointCloud(velocity.elements).at(domain.grid()), ones, zeros)
-    smask = field.where(velocity.at(domain.sgrid()), sones, szeros)
+    smask = field.where(PointCloud(velocity.elements).at(domain.sgrid()), sones, szeros)
     bcs = liquid.get_bcs(domain, obstacles)
 
     v_force_field = liquid.apply_gravity(dt, v_field)
-    v_div_free_field = liquid.make_incompressible(v_force_field, bcs, cmask, smask, pressure)
+    v_div_free_field, pressure = liquid.make_incompressible(v_force_field, bcs, cmask, smask, pressure)
     if pic:
         velocity_values = liquid.map2particle(velocity, v_div_free_field, smask)
     else:
@@ -118,7 +119,7 @@ def step(velocity, v_field, pressure, t, ones, zeros, domain, sones, szeros, obs
         velocity = liquid.add_inflow(velocity, initial_points, initial_velocity)
     velocity = liquid.respect_boundaries(domain, obstacles, velocity)
 
-    # get new velocity field
+    # sample new velocity field
     v_field = velocity.at(domain.sgrid())
 
     return dict(velocity=velocity, v_field=v_field, pressure=pressure, t=t + 1, ones=ones, zeros=zeros,

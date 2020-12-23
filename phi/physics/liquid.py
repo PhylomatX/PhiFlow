@@ -16,16 +16,16 @@ def get_bcs(domain, obstacles):
 
 
 def make_incompressible(v_field, bcs, cmask, smask, pressure):
-    v_force_field = field.extp_sgrid(v_field * smask, 1) * bcs  # conserves falling shapes
-    div = field.divergence(v_force_field) * cmask  # cmask prevents falling shape from collapsing
+    v_field = field.extp_sgrid(v_field * smask, 1) * bcs  # conserves falling shapes
+    div = field.divergence(v_field) * cmask  # cmask prevents falling shape from collapsing
 
     def laplace(p):
         # TODO: prefactor of pressure should not have any effect, but it has
         return field.where(cmask, field.divergence(field.gradient(p, type=StaggeredGrid) * bcs), 1e6 * p)
 
     converged, pressure, iterations = field.solve(laplace, div, pressure, solve_params=math.LinearSolve(None, 1e-5))
-    gradp = field.gradient(pressure, type=type(v_force_field))
-    return v_force_field - gradp
+    gradp = field.gradient(pressure, type=type(v_field))
+    return v_field - gradp, pressure
 
 
 def map2particle(v_particle, current_v_field, smask, orig_v_field=None):
