@@ -13,7 +13,7 @@ def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool
         initial_density.native()[:, :pool_height] = 1
     multiple_blocks = random.random()
     block_num = 1
-    if multiple_blocks < multiple_blocks_prob:
+    if pool > pool_prob and multiple_blocks < multiple_blocks_prob:
         block_num = random.randint(block_num_min, block_num_max)
     for i in range(block_num):
         block_ly = random.randint(block_min, size - block_size_min - wall_distance)

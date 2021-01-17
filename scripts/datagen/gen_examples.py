@@ -27,9 +27,11 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
              step_size: Union[int, float] = 0.1, inflow: int = 0,
              obstacles: List[Obstacle] = None, scale: List[float] = None,
              pic: bool = False, tf_example: bool = True, vel: np.ndarray = None,
-             particle_num_wf: Welford = None, vel_wf: Welford = None, acc_wf: Welford = None):
+             particle_num_wf: Welford = None, vel_wf: Welford = None, acc_wf: Welford = None,
+             point_density: int = 8):
     # generate points
-    initial_points = _distribute_points(idensity, 8)
+    initial_points = _distribute_points(idensity, point_density)
+
     points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
     if vel is None:
         initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
@@ -144,11 +146,18 @@ def main(_):
     random.seed(FLAGS.seed)
     np.random.seed(FLAGS.seed)
 
+    point_density = 8
+
     for sim_ix in range(dataset_size):
-        initial_density = random_scene(domain, pool_max=8, block_num_max=2, multiple_blocks_prob=0.3, block_size_max=15, block_size_min=2)
+        point_limit = 900
+        exclude = True
+        while exclude:
+            initial_density = random_scene(domain, pool_max=3, block_num_max=2, multiple_blocks_prob=0.3, block_size_max=10, block_size_min=2,
+                                           pool_min=2)
+            exclude = np.sum(initial_density.numpy()) * point_density >= point_limit
         example, vel_wf, acc_wf, particle_num_wf = sim2file(domain, initial_density, duration=sequence_length + 1,
                                                             step_size=dt, scale=scale, particle_num_wf=particle_num_wf,
-                                                            vel_wf=vel_wf, acc_wf=acc_wf)
+                                                            vel_wf=vel_wf, acc_wf=acc_wf, point_density=point_density)
         examples.append(example)
 
     metadata = dict(bounds=[scale, scale], sequence_length=sequence_length, default_connectivity_radius=0.015, dim=2, dt=dt,
