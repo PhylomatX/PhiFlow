@@ -12,8 +12,8 @@ initial_density = domain.grid().values
 inflow = 0
 
 # block falls into pool
-initial_density.native()[20:50, 45:55] = 1
-initial_density.native()[:, :15] = 1
+initial_density.native()[20:42, 30:50] = 1
+# initial_density.native()[:, :15] = 1
 
 # large block falls to bottom
 # initial_density.native()[12:25, 20:30] = 1
@@ -75,9 +75,9 @@ szeros = domain.sgrid(0, extrapolation=density.extrapolation)
 smask = field.where(sdensity, sones, szeros)
 
 # define obstacles
-obstacles = ()
+# obstacles = ()
 # obstacles = [Obstacle(Box[25:45, 35:39].rotated(-40)), Obstacle(Box[10:25, 10:15].rotated(40))]
-# obstacles = [Obstacle(Box[30:50, 30:40].rotated(40))]
+obstacles = [Obstacle(Box[:, 20:25])]
 
 # define initial state
 state = dict(points=points, velocity=velocity, density=density, v_force_field=domain.sgrid(0), v_change_field=domain.sgrid(0),

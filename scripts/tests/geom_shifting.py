@@ -16,7 +16,7 @@ state = dict(points=points, accessible=accessible * 2 + points.at(domain.grid())
 
 def step(points: PointCloud, outward: bool, **kwargs):
     # shift = (~domain.bounds).shift_points(points.elements.center, outward=outward)
-    shift = obstacle.geometry.shift_points(points.elements.center, outward=outward)
+    shift = obstacle.geometry.shift_points(points.elements.center, outward=outward, shift_amount=1)
     points = PointCloud(points.elements.shifted(shift), add_overlapping=True, bounds=points.bounds)
     accessible = domain.grid(1 - HardGeometryMask(union(obstacle.geometry)))
     return dict(points=points, accessible=accessible * 2 + points.at(domain.grid()), outward=not outward)

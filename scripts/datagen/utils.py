@@ -1,10 +1,13 @@
 import random
+from typing import Tuple
 from phi.flow import *
 
 
 def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool_max: int = 8,
                  block_min: int = 0, block_size_max: int = 20, block_size_min: int = 5, wall_distance: int = 2,
-                 block_num_min: int = 1, block_num_max: int = 2, multiple_blocks_prob: float = 0):
+                 block_num_min: int = 1, block_num_max: int = 2, multiple_blocks_prob: float = 0,
+                 obstacle_prob: float = 0, obstacle_num: Tuple[int] = (1, 5), obstacle_length: Tuple[int] = (2, 20),
+                 obstacle_rot: Tuple[int] = (0, 90), vel_prob: float = 0, vel_range: Tuple[float] = (0, 5)):
     size = int(domain.bounds.upper[0])
     initial_density = domain.grid().values
     pool = random.random()
@@ -23,7 +26,32 @@ def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool
         initial_density.native()[block_lx:block_ux, block_ly:block_uy] = 1
     # ensure that no block sticks at top
     initial_density.native()[:, size - 1] = 0
-    return initial_density
+
+    obs_num = 0
+    obstacles = []
+    if random.random() < obstacle_prob:
+        obs_num = random.randint(*obstacle_num)
+    for obs in range(obs_num):
+        valid = False
+        while not valid:
+            obs_length = random.randint(*obstacle_length)
+            obs_rot = random.randint(*obstacle_rot)
+            obs_ly = random.randint(0, size)
+            obs_lx = random.randint(0, size)
+            obs_uy = obs_ly + 1
+            obs_ux = obs_lx + obs_length
+            obs = Obstacle(Box[obs_lx:obs_ux, obs_ly:obs_uy].rotated(obs_rot))
+            obs_mask = domain.grid(HardGeometryMask(union([obs.geometry]))).values
+            valid = max(np.unique(initial_density.numpy() + obs_mask.numpy())) == 1
+        obstacles.append(obs)
+
+    vel = None
+    if random.random() < vel_prob:
+        vel_x = random.uniform(*vel_range)
+        vel_y = random.uniform(*vel_range)
+        vel = np.array([vel_x, vel_y])
+
+    return initial_density, obstacles, vel
 
 
 class Welford:
@@ -63,7 +91,7 @@ class Welford:
         if self._num > 1:
             return self._newM2 / (self._num - 1)
         else:
-            return None
+            return 0
 
     @property
     def M2(self):
@@ -71,10 +99,7 @@ class Welford:
 
     @property
     def std(self):
-        if self.var is not None:
-            return np.sqrt(self.var)
-        else:
-            return None
+        return np.sqrt(self.var)
 
     def merge(self, other):
         num = self.num + other.num

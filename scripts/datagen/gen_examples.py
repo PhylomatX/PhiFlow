@@ -14,7 +14,7 @@ from absl import flags
 flags.DEFINE_string("save_path", None, help="Path where record should get saved.")
 flags.DEFINE_string("name", None, help="Name of file.")
 flags.DEFINE_integer("size", 50, help="Number of examples")
-flags.DEFINE_integer("duration", 200, help="Number of examples")
+flags.DEFINE_integer("duration", 150, help="Number of examples")
 flags.DEFINE_integer("seed", 1, help="Random seed")
 FLAGS = flags.FLAGS
 
@@ -32,7 +32,7 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
     # generate points
     initial_points = _distribute_points(idensity, point_density)
 
-    points = PointCloud(Sphere(initial_points, 0), add_overlapping=True, bounds=domain.bounds)
+    points = PointCloud(Sphere(initial_points, 0), add_overlapping=True)
     if vel is None:
         initial_velocity = math.tensor(np.zeros(initial_points.shape), names=['points', 'vector'])
     else:
@@ -52,7 +52,7 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
         obstacles = []
 
     obstacle_mask = domain.grid(HardGeometryMask(union([obstacle.geometry for obstacle in obstacles]))).values
-    obstacle_points = _distribute_points(obstacle_mask, 1)
+    obstacle_points = _distribute_points(obstacle_mask, 3)
     obstacle_points = PointCloud(Sphere(obstacle_points, 0))
 
     # define initial state
@@ -152,12 +152,14 @@ def main(_):
         point_limit = 900
         exclude = True
         while exclude:
-            initial_density = random_scene(domain, pool_max=3, block_num_max=2, multiple_blocks_prob=0.3, block_size_max=10, block_size_min=2,
-                                           pool_min=2)
+            initial_density, obstacles, vel = random_scene(domain, pool_max=4, block_num_max=4, multiple_blocks_prob=0.4,
+                                                           block_size_max=15, block_size_min=1, pool_min=2, obstacle_prob=0.8,
+                                                           vel_prob=0.5, vel_range=(0, 5))
             exclude = np.sum(initial_density.numpy()) * point_density >= point_limit
         example, vel_wf, acc_wf, particle_num_wf = sim2file(domain, initial_density, duration=sequence_length + 1,
                                                             step_size=dt, scale=scale, particle_num_wf=particle_num_wf,
-                                                            vel_wf=vel_wf, acc_wf=acc_wf, point_density=point_density)
+                                                            vel_wf=vel_wf, acc_wf=acc_wf, point_density=point_density,
+                                                            obstacles=obstacles, vel=vel)
         examples.append(example)
 
     metadata = dict(bounds=[scale, scale], sequence_length=sequence_length, default_connectivity_radius=0.015, dim=2, dt=dt,

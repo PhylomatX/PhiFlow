@@ -16,7 +16,7 @@ def get_bcs(domain, obstacles):
 
 
 def make_incompressible(v_field, bcs, cmask, smask, pressure):
-    v_field = field.extp_sgrid(v_field * smask, 1) * bcs  # conserves falling shapes
+    v_field = field.extp_sgrid(v_field * smask, 1) * bcs  # extrapolation conserves falling shapes
     div = field.divergence(v_field) * cmask  # cmask prevents falling shape from collapsing
 
     def laplace(p):
@@ -48,11 +48,11 @@ def add_inflow(particles, inflow_points, inflow_values):
                       values=new_values)
 
 
-def respect_boundaries(domain, obstacles, particles):
+def respect_boundaries(domain, obstacles, particles, shift_amount=1):
     points = particles.elements
     for obstacle in obstacles:
-        shift = obstacle.geometry.shift_points(points.center, shift_amount=0.5)
+        shift = obstacle.geometry.shift_points(points.center, shift_amount=shift_amount)
         points = particles.elements.shifted(shift)
-    shift = (~domain.bounds).shift_points(points.center)
+    shift = (~domain.bounds).shift_points(points.center, shift_amount=shift_amount)
     return PointCloud(particles.elements.shifted(shift), add_overlapping=particles.add_overlapping,
                       bounds=particles.bounds, values=particles.values)
