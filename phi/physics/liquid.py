@@ -10,6 +10,8 @@ def apply_gravity(dt, v_field):
 
 
 def get_bcs(domain, obstacles):
+    import ipdb
+    ipdb.set_trace()
     accessible = domain.grid(1 - HardGeometryMask(union([obstacle.geometry for obstacle in obstacles])))
     accessible_mask = domain.grid(accessible, extrapolation=domain.boundaries.accessible_extrapolation)
     return field.stagger(accessible_mask, math.minimum, accessible_mask.extrapolation)

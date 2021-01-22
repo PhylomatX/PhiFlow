@@ -7,7 +7,7 @@ def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool
                  block_min: int = 0, block_size_max: int = 20, block_size_min: int = 5, wall_distance: int = 2,
                  block_num_min: int = 1, block_num_max: int = 2, multiple_blocks_prob: float = 0,
                  obstacle_prob: float = 0, obstacle_num: Tuple[int] = (1, 5), obstacle_length: Tuple[int] = (2, 20),
-                 obstacle_rot: Tuple[int] = (0, 90), vel_prob: float = 0, vel_range: Tuple[float] = (0, 5)):
+                 obstacle_rot: Tuple[int] = (0, 90), vel_prob: float = 0, vel_range: Tuple[float] = (-5, 5)):
     size = int(domain.bounds.upper[0])
     initial_density = domain.grid().values
     pool = random.random()
@@ -41,7 +41,9 @@ def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool
             obs_uy = obs_ly + 1
             obs_ux = obs_lx + obs_length
             obs = Obstacle(Box[obs_lx:obs_ux, obs_ly:obs_uy].rotated(obs_rot))
-            obs_mask = domain.grid(HardGeometryMask(union([obs.geometry]))).values
+            # prevents distortion of fluids when passing by obstacles
+            bounding_box = Obstacle(Box[obs_lx-1:obs_ux+1, obs_ly-1:obs_uy+1].rotated(obs_rot))
+            obs_mask = domain.grid(HardGeometryMask(union([bounding_box.geometry]))).values
             valid = max(np.unique(initial_density.numpy() + obs_mask.numpy())) == 1
         obstacles.append(obs)
 
