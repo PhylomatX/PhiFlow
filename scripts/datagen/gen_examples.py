@@ -154,7 +154,7 @@ def main(_):
         while exclude:
             initial_density, obstacles, vel = random_scene(domain, pool_max=4, block_num_max=4, multiple_blocks_prob=0.4,
                                                            block_size_max=15, block_size_min=1, pool_min=2, obstacle_prob=0.8,
-                                                           vel_prob=0.5, vel_range=(-5, 0))
+                                                           vel_prob=0.5, vel_range=(-5, 5))
             exclude = np.sum(initial_density.numpy()) * point_density >= point_limit
         example, vel_wf, acc_wf, particle_num_wf = sim2file(domain, initial_density, duration=sequence_length + 1,
                                                             step_size=dt, scale=scale, particle_num_wf=particle_num_wf,
