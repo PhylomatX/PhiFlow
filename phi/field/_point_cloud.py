@@ -3,7 +3,6 @@ from typing import Any
 from phi import math
 from phi.geom import Geometry, GridCell, Box
 from ._field import SampledField
-from ._grid import CenteredGrid
 from ..geom._stack import GeometryStack
 from ..math import Tensor
 
@@ -94,38 +93,3 @@ class PointCloud(SampledField):
 
     def __repr__(self):
         return "PointCloud[%s]" % (self.shape,)
-
-
-def _distribute_points(density, particles_per_cell=1, distribution='uniform'):
-    """
-    Distribute points according to the distribution specified in density.
-
-    Args:
-      density: binary tensor
-      particles_per_cell: integer (Default value = 1)
-      distribution: uniform' or 'center' (Default value = 'uniform')
-
-    Returns:
-      tensor of shape (batch_size, point_count, rank)
-
-    """
-    assert distribution in ('center', 'uniform')
-    index_array = []
-    batch_size = math.staticshape(density)[0] if math.staticshape(density)[0] is not None else 1
-    
-    for batch in range(batch_size):
-        indices = math.where(density[batch, ..., 0] > 0)
-        indices = math.to_float(indices)
-
-        temp = []
-        for _ in range(particles_per_cell):
-            if distribution == 'center':
-                temp.append(indices + 0.5)
-            elif distribution == 'uniform':
-                temp.append(indices + math.random_uniform(math.shape(indices)))
-        index_array.append(math.concat(temp, dim=0))
-    try:
-        index_array = math.stack(index_array)
-        return index_array
-    except ValueError:
-        raise ValueError("all arrays in the batch must have the same number of active cells.")
