@@ -22,7 +22,7 @@ from phi import geom
 from phi.geom import Geometry, Sphere, Box, union
 
 from phi import field
-from phi.field import Grid, CenteredGrid, StaggeredGrid, GeometryMask, SoftGeometryMask, HardGeometryMask, Noise, PointCloud
+from phi.field import Grid, CenteredGrid, StaggeredGrid, GeometryMask, SoftGeometryMask, HardGeometryMask, Noise, PointCloud, distribute_points
 
 from phi import physics
 from phi.physics import _boundaries as boundaries, fluid, flip, advect as advect

@@ -90,3 +90,27 @@ class PointCloud(SampledField):
 
     def __repr__(self):
         return "PointCloud[%s]" % (self.shape,)
+
+
+def distribute_points(mask: Tensor, point_num: int = 1, dist: str = 'uniform') -> Tensor:
+    """
+    Generates points from a random distribution according to the given tensor mask.
+    
+    Args:
+        mask: Tensor with nonzero values at the indices where particles should get generated. 
+        point_num: Number of particles to generate at each marked index
+        dist: Random distribution from which point positions get drawn.
+
+    Returns:
+        A tensor containing the positions of the generated points.
+    """
+    indices = math.to_float(math.nonzero(mask, list_dim='points'))
+    temp = []
+    for _ in range(point_num):
+        if dist == 'center':
+            temp.append(indices + 0.5)
+        elif dist == 'uniform':
+            temp.append(indices + (math.random_uniform(indices.shape)))
+        else:
+            raise NotImplementedError
+    return math.concat(temp, dim='points')
