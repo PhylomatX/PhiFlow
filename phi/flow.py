@@ -27,6 +27,7 @@ from phi.field import Grid, CenteredGrid, StaggeredGrid, GeometryMask, SoftGeome
 from phi import physics
 from phi.physics import _boundaries as boundaries, fluid, flip, advect as advect
 from phi.physics._boundaries import Domain, Material, OPEN, CLOSED, PERIODIC, NO_SLIP, NO_STICK, STICKY, SLIPPERY, Obstacle
+from phi.physics._effect import Gravity, gravity_tensor
 
 from .app import App, EditableInt, EditableBool, EditableFloat, EditableString, _display
 from .app._module_app import ModuleViewer
