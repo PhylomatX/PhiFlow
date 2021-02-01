@@ -31,11 +31,6 @@ class Field:
         * The spatial dimension names match the dimensions of this Field
         * The batch dimensions match the batch dimensions of this Field
         * The channel dimensions match the channels of this Field
-
-        Args:
-
-        Returns:
-
         """
         raise NotImplementedError()
 
@@ -44,11 +39,6 @@ class Field:
         """
         Spatial rank of the field (1 for 1D, 2 for 2D, 3 for 3D).
         This is equal to the spatial rank of the `data`.
-
-        Args:
-
-        Returns:
-
         """
         return self.shape.spatial.rank
 
@@ -62,35 +52,45 @@ class Field:
         
         The default implementation of this method samples this Field at the center point of the geometry.
 
+        See `Field.sample_at()`, `Field.at()`.
+
         Args:
           geometry: single or batched Geometry object
-          reduce_channels: optional) dimension of `points` to be reduced against the vector dimension of this Field.
-        Causes the components of this field to be sampled at different locations.
-        The result is the same as `math.channel_stack([component.sample_at(p) for component, p in zip(field.unstack('vector'), points.unstack(reduce)])` (Default value = ())
-          geometry: Geometry: 
+          reduce_channels: (optional) Dimensions of `points` to be reduced against the channel dimensions of this `Field`.
+            Causes the components of this field to be sampled at different locations.
+            The result is the same as `math.channel_stack([component.sample_at(p) for component, p in zip(field.unstack('vector'), points.unstack(reduce)])`
+            assuming this field as a single channel dimension called `vector`.
+
+            Example:
+            While `StaggeredGrid.sample_at(staggered_points)` samples all components at all faces,
+            `StaggeredGrid.sample_at(staggered_points, reduce_channels='staggered')` samples each component at the corresponding face only.
 
         Returns:
-          sampled values
-
+          Sampled values as a `Tensor`
         """
         return self.sample_at(geometry.center, reduce_channels)
 
     def sample_at(self, points: Tensor, reduce_channels=()) -> Tensor:
         """
-        Sample this field at the world-space locations (in physical units) given by points.
+        Sample this field at the world-space locations (in physical units) given by `points`.
         Points must have a single channel dimension named `vector`.
         It may additionally contain any number of batch and spatial dimensions, all treated as batch dimensions.
 
+        See `Field.sample_in()`, `Field.at()`.
+
         Args:
           points: world-space locations
-          reduce_channels: optional) dimension of `points` to be reduced against the vector dimension of this Field.
-        Causes the components of this field to be sampled at different locations.
-        The result is the same as `math.channel_stack([component.sample_at(p) for component, p in zip(field.unstack('vector'), points.unstack(reduce)])` (Default value = ())
-          points: Tensor: 
+          reduce_channels: (optional) Dimensions of `points` to be reduced against the channel dimensions of this `Field`.
+            Causes the components of this field to be sampled at different locations.
+            The result is the same as `math.channel_stack([component.sample_at(p) for component, p in zip(field.unstack('vector'), points.unstack(reduce)])`
+            assuming this field as a single channel dimension called `vector`.
+
+            Example:
+            While `StaggeredGrid.sample_at(staggered_points)` samples all components at all faces,
+            `StaggeredGrid.sample_at(staggered_points, reduce_channels='staggered')` samples each component at the corresponding face only.
 
         Returns:
-          sampled values
-
+          Sampled values as a `Tensor`
         """
         raise NotImplementedError(self)
 
@@ -99,7 +99,7 @@ class Field:
         Samples this field at the sample points of `representation`.
         The result will approximate the values of this field on the data structure of `representation`.
         
-        Unlike Field.sample_at(), this method returns a Field object, not a Tensor.
+        Unlike `Field.sample_at()` or `Field.sample_in()`, this method returns a `Field` object, not a `Tensor`.
 
         Equal to `self >> representation`.
 
@@ -162,6 +162,8 @@ class Field:
     def __getattr__(self, name: str) -> _FieldDim:
         if name.startswith('_'):
             raise AttributeError(f"'{type(self)}' object has no attribute '{name}'")
+        if hasattr(self.__class__, name):
+            raise RuntimeError(f"Failed to get attribute '{name}' of {self}")
         return _FieldDim(self, name)
 
     def __mul__(self, other):
@@ -242,6 +244,20 @@ class SampledField(Field):
         self._extrapolation = extrapolation
         self._shape = elements.shape.non_channel & self._values.shape.non_spatial
 
+    def with_(self,
+              elements: Geometry or None = None,
+              values: Tensor = None,
+              extrapolation: math.Extrapolation = None) -> SampledField:
+        """ Creates a copy of this field with one or more properties changed. `None` keeps the current value. """
+        copied = copy.copy(self)
+        SampledField.__init__(copied,
+                              elements if elements is not None else self._elements,
+                              values if values is not None else self._values,  # do not use == check
+                              extrapolation if extrapolation is not None else self._extrapolation)
+        return copied
+
+    copied_with = with_
+
     @property
     def elements(self) -> Geometry:
         """
@@ -251,13 +267,6 @@ class SampledField(Field):
         For grids, the geometries are boxes while particle fields may be represented as spheres.
         
         If this Field has no discrete points, this method returns an empty geometry.
-        
-        :return: Geometry with all batch/spatial dimensions of this Field. Staggered sample points are modelled using extra batch dimensions.
-
-        Args:
-
-        Returns:
-
         """
         return self._elements
 
@@ -268,6 +277,8 @@ class SampledField(Field):
     @property
     def values(self) -> Tensor:
         return self._values
+
+    data = values
 
     @property
     def extrapolation(self) -> Extrapolation:
@@ -282,32 +293,27 @@ class SampledField(Field):
 
     def unstack(self, dimension: str) -> tuple:
         values = self._values.unstack(dimension)
-        return tuple(self._with(v) for i, v in enumerate(values))
+        return tuple(self.with_(values=v) for i, v in enumerate(values))
 
     def _op1(self, operator) -> Field:
         values = operator(self.values)
         extrapolation_ = operator(self._extrapolation)
-        return self._with(values=values, extrapolation=extrapolation_)
+        return self.with_(values=values, extrapolation=extrapolation_)
 
     def _op2(self, other, operator) -> Field:
         if isinstance(other, Field):
             other_values = other.sample_in(self._elements)
             values = operator(self._values, other_values)
             extrapolation_ = operator(self._extrapolation, other.extrapolation)
-            return self._with(values, extrapolation_)
+            return self.with_(values=values, extrapolation=extrapolation_)
         else:
             other = math.tensor(other)
             values = operator(self._values, other)
-            return self._with(values)
+            return self.with_(values=values)
 
     def __getitem__(self, item):
         values = self._values[item]
-        return self._with(values)
-
-    def _with(self, values: Tensor = None, extrapolation: math.Extrapolation = None):
-        copied = copy.copy(self)
-        SampledField.__init__(copied, self._elements, values if values is not None else self._values, extrapolation if extrapolation is not None else self._extrapolation)
-        return copied
+        return self.with_(values=values)
 
 
 class _FieldDim:

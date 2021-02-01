@@ -26,7 +26,7 @@ def step(particles, v_field, pressure, dt, t, **kwargs):
     particles = advect.advect(particles, v_div_free_field, dt, occupied=smask, valid=bcs, mode='rk4')
     if t < inflow:
         particles = flip.add_inflow(particles, initial_points, initial_velocity)
-    particles = flip.respect_boundaries(domain, obstacles, particles)
+    particles = flip.respect_boundaries(particles, domain, obstacles)
     return dict(particles=particles, v_field=particles.at(domain.sgrid()), pressure=pressure, t=t + 1, cmask=cmask)
 
 

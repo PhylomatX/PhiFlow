@@ -1,14 +1,14 @@
 import functools
 import re
 import time
+from numbers import Number
 from typing import Tuple
 
 import numpy as np
 
 from .backend import default_backend, choose_backend, Solve, LinearSolve, Backend, get_precision
 from .backend._dtype import DType, combine_types
-from ._shape import BATCH_DIM, CHANNEL_DIM, SPATIAL_DIM, Shape, EMPTY_SHAPE, spatial_shape, shape as shape_, \
-    _infer_dim_type_from_name
+from ._shape import BATCH_DIM, CHANNEL_DIM, SPATIAL_DIM, Shape, EMPTY_SHAPE, spatial_shape, shape as shape_, _infer_dim_type_from_name
 from ._tensors import Tensor, tensor, broadcastable_native_tensors, NativeTensor, CollapsedTensor, TensorStack, custom_op2, tensors
 from . import extrapolation
 from .backend._profile import get_current_profile
@@ -279,27 +279,35 @@ def pad(value: Tensor, widths: dict, mode: 'extrapolation.Extrapolation') -> Ten
     return mode.pad(value, widths)
 
 
-def closest_grid_values(grid: Tensor, coordinates: Tensor, extrap: 'extrapolation.Extrapolation'):
+def closest_grid_values(grid: Tensor,
+                        coordinates: Tensor,
+                        extrap: 'extrapolation.Extrapolation',
+                        stack_dim_prefix='closest_'):
     """
     Finds the neighboring grid points in all spatial directions and returns their values.
     The result will have 2^d values for each vector in coordiantes in d dimensions.
 
     Args:
-      extrap: grid extrapolation
       grid: grid data. The grid is spanned by the spatial dimensions of the tensor
       coordinates: tensor with 1 channel dimension holding vectors pointing to locations in grid index space
-      grid: Tensor: 
-      coordinates: Tensor: 
-      extrap: 'extrapolation.Extrapolation': 
+      extrap: grid extrapolation
+      stack_dim_prefix: For each spatial dimension `dim`, stacks lower and upper closest values along dimension `stack_dim_prefix+dim`.
 
     Returns:
       Tensor of shape (batch, coord_spatial, grid_spatial=(2, 2,...), grid_channel)
 
     """
+    return broadcast_op(functools.partial(_closest_grid_values, extrap=extrap, stack_dim_prefix=stack_dim_prefix), [grid, coordinates])
+
+
+def _closest_grid_values(grid: Tensor,
+                        coordinates: Tensor,
+                        extrap: 'extrapolation.Extrapolation',
+                        stack_dim_prefix='closest_'):
     # alternative method: pad array for all 2^d combinations, then stack to simplify gather_nd.
-    assert all(name not in grid.shape for name in coordinates.shape.spatial.names), 'grid and coordinates must have different spatial dimensions'
     # --- Pad tensor where transform is not possible ---
-    non_copy_pad = {dim: (0 if extrap[dim, 0].is_copy_pad else 1, 0 if extrap[dim, 1].is_copy_pad else 1) for dim in grid.shape.spatial.names}
+    non_copy_pad = {dim: (0 if extrap[dim, 0].is_copy_pad else 1, 0 if extrap[dim, 1].is_copy_pad else 1)
+                    for dim in grid.shape.spatial.names}
     grid = extrap.pad(grid, non_copy_pad)
     coordinates += [not extrap[dim, 0].is_copy_pad for dim in grid.shape.spatial.names]
     # --- Transform coordiantes ---
@@ -317,7 +325,7 @@ def closest_grid_values(grid: Tensor, coordinates: Tensor, extrap: 'extrapolatio
         else:
             values_left = left_right(is_hi_by_axis_left, ax_idx + 1)
             values_right = left_right(is_hi_by_axis_right, ax_idx + 1)
-        return spatial_stack([values_left, values_right], grid.shape.spatial.names[ax_idx])
+        return spatial_stack([values_left, values_right], f"{stack_dim_prefix}{grid.shape.spatial.names[ax_idx]}")
 
     result = left_right(np.array([False] * grid.shape.spatial_rank), 0)
     return result
@@ -328,13 +336,31 @@ def grid_sample(grid: Tensor, coordinates: Tensor, extrap: 'extrapolation.Extrap
     return result
 
 
-def _grid_sample(grid: Tensor, coordinates: Tensor, extrap: 'extrapolation.Extrapolation'):
-    if extrap.native_grid_sample_mode and grid.shape.batch == coordinates.shape.batch:
+def _grid_sample(grid: Tensor, coordinates: Tensor, extrap: 'extrapolation.Extrapolation' or None):
+    if grid.shape.batch == coordinates.shape.batch:
+        # reshape batch dimensions, delegate to backend.grid_sample()
         grid_batched = join_dimensions(join_dimensions(grid, grid.shape.batch, 'batch'), grid.shape.channel, 'vector')
-        grid_native = grid_batched.native()
         coordinates_batched = join_dimensions(coordinates, coordinates.shape.batch, 'batch')
-        coordinates_native = coordinates_batched.native()
-        result = choose_backend(grid_native).grid_sample(grid_native, grid.shape.index(grid.shape.spatial), coordinates_native, extrap.native_grid_sample_mode)
+        backend = choose_backend(*grid._natives())
+        result = NotImplemented
+        if extrap is None:
+            result = backend.grid_sample(grid_batched.native(),
+                                         grid.shape.index(grid.shape.spatial),
+                                         coordinates_batched.native(),
+                                         'undefined')
+        elif extrap.native_grid_sample_mode:
+            result = backend.grid_sample(grid_batched.native(),
+                                         grid.shape.index(grid.shape.spatial),
+                                         coordinates_batched.native(),
+                                         extrap.native_grid_sample_mode)
+        if result == NotImplemented:
+            # pad one layer
+            grid_batched = pad(grid_batched, {dim: (1, 1) for dim in grid.shape.spatial.names}, extrap or extrapolation.ZERO)
+            inner_coordinates = coordinates + 1
+            result = backend.grid_sample(grid_batched.native(),
+                                         grid.shape.index(grid.shape.spatial),
+                                         inner_coordinates.native(),
+                                         'undefined')
         if result != NotImplemented:
             result_shape = grid_batched.shape.non_spatial & coordinates_batched.shape.spatial
             result = NativeTensor(result, result_shape)
@@ -342,16 +368,12 @@ def _grid_sample(grid: Tensor, coordinates: Tensor, extrap: 'extrapolation.Extra
             result = split_dimension(result, 'vector', grid.shape.channel)
             return result
     # fallback to slower grid sampling
-    coord_names = ['_coord_' + dim.name if dim.is_spatial else dim.name for dim in coordinates.shape.unstack()]
-    coordinates = coordinates._with_shape_replaced(coordinates.shape.with_names(coord_names))
-    neighbors = closest_grid_values(grid, coordinates, extrap)
-    binary = meshgrid(**{dim: (0, 1) for dim in grid.shape.spatial.names})
+    neighbors = _closest_grid_values(grid, coordinates, extrap or extrapolation.ZERO, 'closest_')
+    binary = meshgrid(**{f'closest_{dim}': (0, 1) for dim in grid.shape.spatial.names})
     right_weights = coordinates % 1
     binary, right_weights = join_spaces(binary, right_weights)
     weights = prod(binary * right_weights + (1 - binary) * (1 - right_weights), 'vector')
-    result = sum_(neighbors * weights, dim=grid.shape.spatial.names)
-    result_names = [dim.name[7:] if dim.is_spatial else dim.name for dim in result.shape.unstack()]
-    result = result._with_shape_replaced(result.shape.with_names(result_names))
+    result = sum_(neighbors * weights, dim=[f"closest_{dim}" for dim in grid.shape.spatial.names])
     return result
 
 
@@ -716,16 +738,23 @@ def divide_no_nan(x, y):
     return custom_op2(x, y, divide_no_nan, lambda x_, y_: choose_backend(x_, y_).divide_no_nan(x_, y_), lambda y_, x_: divide_no_nan(x_, y_), lambda y_, x_: choose_backend(x_, y_).divide_no_nan(x_, y_))
 
 
-def maximum(x, y):
+def maximum(x: Tensor or float, y: Tensor or float):
     return custom_op2(x, y, maximum, lambda x_, y_: choose_backend(x_, y_).maximum(x_, y_))
 
 
-def minimum(x, y):
+def minimum(x: Tensor or float, y: Tensor or float):
     return custom_op2(x, y, minimum, lambda x_, y_: choose_backend(x_, y_).minimum(x_, y_))
 
 
-def clip(x: Tensor, clip_min: float, clip_max: float):
-    return x._op1(lambda native: choose_backend(native).clip(native, clip_min, clip_max))
+def clip(x: Tensor, lower_limit: float or Tensor, upper_limit: float or Tensor):
+    if isinstance(lower_limit, Number) and isinstance(upper_limit, Number):
+
+        def clip_(x):
+            return x._op1(lambda native: choose_backend(native).clip(native, lower_limit, upper_limit))
+
+        return broadcast_op(clip_, [x])
+    else:
+        return maximum(lower_limit, minimum(x, upper_limit))
 
 
 def with_custom_gradient(function, inputs, gradient, input_index=0, output_index=None, name_base='custom_gradient_func'):
@@ -754,7 +783,7 @@ def gather(value: Tensor, indices: Tensor):
     result = backend.gather_nd(v_, i_, batch_dims=value.shape.batch_rank)
     if value.shape.channel_rank == 0:
         result = result[..., 0]
-    new_shape = value.shape.batch & indices.shape.non_channel & value.shape.channel
+    new_shape = value.shape.non_spatial & indices.shape.non_channel
     return NativeTensor(result, new_shape)
 
 
@@ -991,6 +1020,7 @@ def solve(operator, y: Tensor, x0: Tensor, solve_params: Solve, callback=None) -
     converged, x, iterations = backend.conjugate_gradient(operator_or_matrix, y_native, x0_native, solve_params.relative_tolerance, solve_params.absolute_tolerance, solve_params.max_iterations, 'implicit', callback)
     loop_time = time.perf_counter() - loop_time
     if get_current_profile():
-        get_current_profile().add_external_message(f"CG   track: {round(track_time * 1000)} ms  \tbuild: {round(build_time * 1000)} ms  \tloop: {round(loop_time * 1000)} ms / {iterations} iterations")
+        info = "  \tProfile with trace=False to get more accurate results." if get_current_profile()._trace else ""
+        get_current_profile().add_external_message(f"CG   track: {round(track_time * 1000)} ms  \tbuild: {round(build_time * 1000)} ms  \tloop: {round(loop_time * 1000)} ms / {iterations} iterations {info}")
     x = backend.reshape(x, batch.sizes + x0.shape.non_batch.sizes)
     return NativeTensor(converged, EMPTY_SHAPE), NativeTensor(x, batch.combined(x0.shape.non_batch)), NativeTensor(iterations, EMPTY_SHAPE)

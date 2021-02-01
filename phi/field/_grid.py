@@ -31,7 +31,25 @@ class Grid(SampledField):
         self._bounds = bounds
         assert_same_rank(self.values.shape, bounds, 'data dimensions %s do not match box %s' % (self.values.shape, bounds))
 
-    def sample_at(self, points, reduce_channels=()) -> Tensor:
+    def sample_at(self, points: Tensor, reduce_channels=()) -> Tensor:
+        raise NotImplementedError(self)
+
+    def closest_values(self, points: Tensor, reduce_channels=()):
+        """
+        Sample the closest grid point values of this field at the world-space locations (in physical units) given by `points`.
+        Points must have a single channel dimension named `vector`.
+        It may additionally contain any number of batch and spatial dimensions, all treated as batch dimensions.
+
+        Args:
+          points: world-space locations
+          reduce_channels: (optional) See `Field.sample_at()` for a description.
+
+        Returns:
+          Closest grid point values as a `Tensor`.
+          For each dimension, the grid points immediately left and right of the sample points are evaluated.
+          For each point in `points`, a *2^d* cube of points is determined where *d* is the number of spatial dimensions of this field.
+          These values are stacked along the new dimensions `'closest_<dim>'` where `<dim>` refers to the name of a spatial dimension.
+        """
         raise NotImplementedError(self)
 
     @property
@@ -135,10 +153,9 @@ class CenteredGrid(Grid):
             padded = pad(self, {dim: (int(lower[i]), int(upper[i])) for i, dim in enumerate(self.shape.spatial.names)})
             return padded._shift_resample(resolution, box)
 
-    def closest_values(self, points):
-        local_points = self.box.global_to_local(points)
-        indices = local_points * math.to_float(self.resolution) - 0.5
-        return math.closest_grid_values(self.values, indices, self.extrapolation)
+    def closest_values(self, points: Tensor, reduce_channels=()):
+        local_points = self.box.global_to_local(points) * self.resolution - 0.5
+        return math.closest_grid_values(self.values, local_points, self.extrapolation)
 
 
 class StaggeredGrid(Grid):
@@ -216,9 +233,13 @@ class StaggeredGrid(Grid):
                 tensors.append(math.zeros(comp_cells.resolution) + component)
             return StaggeredGrid(math.channel_stack(tensors, 'vector'), bounds, extrapolation)
 
-    def _with(self, values: Tensor = None, extrapolation: math.Extrapolation = None):
+    def with_(self,
+              elements: Geometry or None = None,
+              values: Tensor = None,
+              extrapolation: math.Extrapolation = None) -> SampledField:
+        assert elements is None
         values = _validate_staggered_values(values) if values is not None else None
-        return Grid._with(self, values, extrapolation)
+        return Grid.with_(self, values=values, extrapolation=extrapolation)
 
     @property
     def cells(self):
@@ -242,6 +263,15 @@ class StaggeredGrid(Grid):
             assert len(reduce_channels) == 1
             points = points.unstack(reduce_channels[0])
             channels = [component.sample_at(p) for p, component in zip(points, self.unstack())]
+        return math.channel_stack(channels, 'vector')
+
+    def closest_values(self, points: Tensor, reduce_channels=()):
+        if not reduce_channels:
+            channels = [component.sample_at(points) for component in self.unstack()]
+        else:
+            assert len(reduce_channels) == 1
+            points = points.unstack(reduce_channels[0])
+            channels = [component.closest_values(p) for p, component in zip(points, self.unstack())]
         return math.channel_stack(channels, 'vector')
 
     def at_centers(self) -> CenteredGrid:
@@ -284,7 +314,7 @@ class StaggeredGrid(Grid):
         if isinstance(other, StaggeredGrid) and self.bounds == other.bounds and self.shape.spatial == other.shape.spatial:
             values = operator(self._values, other.values)
             extrapolation_ = operator(self._extrapolation, other.extrapolation)
-            return self._with(values, extrapolation_)
+            return self.with_(values=values, extrapolation=extrapolation_)
         else:
             return SampledField._op2(self, other, operator)
 
@@ -295,7 +325,7 @@ class StaggeredGrid(Grid):
     #         grid = grid[tuple([slice(None, None, 2) if d - 1 == axis else slice(None) for d in range(self.rank + 2)])]  # Discard odd indices along axis
     #         grid = math.downsample2x(grid, dims=tuple(filter(lambda ax2: ax2 != axis, range(self.rank))))  # Interpolate values along other dims
     #         values.append(grid)
-    #     return self._with(values)
+    #     return self.with_(values=values)
 
 
 def unstack_staggered_tensor(data: Tensor) -> TensorStack:

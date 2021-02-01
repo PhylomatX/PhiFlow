@@ -4,7 +4,7 @@ import warnings
 import numpy as np
 
 from . import _shape
-from .backend import NoBackendFound, choose_backend, BACKENDS
+from .backend import NoBackendFound, choose_backend, BACKENDS, get_precision
 from ._shape import Shape, CHANNEL_DIM, BATCH_DIM, SPATIAL_DIM, EMPTY_SHAPE
 
 
@@ -127,9 +127,11 @@ class Tensor:
         if all_available(self):
             if self.rank == 0:
                 return str(self.numpy())
-            elif self.shape.volume is not None and self.shape.volume <= 4:
+            elif self.shape.volume is not None and self.shape.volume <= 6:
                 content = list(np.reshape(self.numpy(), [-1]))
                 content = ', '.join([repr(number) for number in content])
+                if self.shape.rank == 1 and (self.dtype.kind in (bool, int) or self.dtype.precision == get_precision()):
+                    return f"({content}) along {self.shape.name}"
                 return f"{self.shape} {self.dtype}  {content}"
             else:
                 min_val, max_val = min_(self), max_(self)
@@ -812,7 +814,7 @@ def tensor(data: Tensor or Shape or tuple or list or numbers.Number,
             from ._functions import cast_same
             elements = cast_same(*elements)
             return TensorStack(elements, dim_name=stack_dim, dim_type=_shape._infer_dim_type_from_name(stack_dim))
-    if isinstance(data, numbers.Number):
+    if isinstance(data, (numbers.Number, str)):
         assert not names
         return NativeTensor(data, EMPTY_SHAPE)
     if isinstance(data, Shape):
