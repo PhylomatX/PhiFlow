@@ -1,4 +1,5 @@
 from typing import Any
+import copy
 
 from phi import math
 from phi.geom import Geometry, GridCell, Box
@@ -77,6 +78,23 @@ class PointCloud(SampledField):
 
     def __repr__(self):
         return "PointCloud[%s]" % (self.shape,)
+
+    def __and__(self, other: SampledField):
+        """
+        Merges the `other` PointCloud into this one. Elements of both PointClouds are merged along the
+        'points' dimension, values are merged along the leading dimension (these must be the same).
+
+        Args:
+            other: Other PointCloud
+
+        Returns:
+            New PointCloud where elements and values have been merged, but all other properties are from
+            this PointCloud.
+        """
+        assert isinstance(other, PointCloud), f'PointCloud and {type(other)} are not compatible.'
+        assert self.values.shape.names[0] == other.values.shape.names[0], 'Dimensions of values tensor differ.'
+        new_values = math.concat([self.values, other.values], dim=self.values.shape.names[0])
+        return self.with_(elements=self._elements.add(other.elements, dim='points'), values=new_values)
 
 
 def distribute_points(mask: Tensor, point_num: int = 1, dist: str = 'uniform') -> Tensor:
