@@ -85,7 +85,7 @@ class PointCloud(SampledField):
         'points' dimension, values are merged along the leading dimension (these must be the same).
 
         Args:
-            other: Other PointCloud
+            other: Second PointCloud
 
         Returns:
             New PointCloud where elements and values have been merged, but all other properties are from
