@@ -15,7 +15,6 @@ flags.DEFINE_string("name", None, help="Name of file.")
 flags.DEFINE_integer("size", 50, help="Number of examples")
 flags.DEFINE_integer("duration", 150, help="Number of examples")
 flags.DEFINE_integer("seed", 1, help="Random seed")
-flags.DEFINE_bool("set", False, help="Dataset mode")
 FLAGS = flags.FLAGS
 
 
@@ -48,7 +47,8 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
 
     # define initial state
     state = dict(velocity=initial_velocity, v_field=initial_velocity.at(domain.sgrid()), pressure=domain.grid(0),
-                 t=0, domain=domain, obstacles=obstacles, inflow=inflow, initial_velocity=initial_velocity, pic=pic)
+                 t=0, domain=domain, obstacles=obstacles, inflow=inflow, initial_velocity=initial_velocity, pic=pic,
+                 c_occupied=PointCloud(initial_velocity.elements, values=1) >> domain.grid())
 
     point_num = len(initial_points.native()) + len(obstacle_points.elements.center.native())
     positions = np.zeros((duration, point_num, 2), dtype=np.float32)
@@ -56,9 +56,9 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
     types[len(initial_points.native()):] = 0
 
     for i in range(duration):
+        velocity = state['velocity']
+        positions[i, ...] = np.vstack((velocity.elements.center.numpy(), obstacle_points.elements.center.numpy()))
         state = step(dt=step_size, **state)
-        initial_velocity = state['initial_velocity']
-        positions[i, ...] = np.vstack((initial_velocity.elements.center.numpy(), obstacle_points.elements.center.numpy()))
 
     if scale is not None:
         upper = domain.bounds.upper[0]
@@ -85,13 +85,13 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
         positions_featlist = tf.train.FeatureList(feature=[positions_feat])
         positions_featlists = tf.train.FeatureLists(feature_list=dict(position=positions_featlist))
 
-        return tf.train.SequenceExample(context=types_feats, feature_lists=positions_featlists), vel_wf, acc_wf, particle_num_wf
+        return tf.train.SequenceExample(context=types_feats,
+                                        feature_lists=positions_featlists), vel_wf, acc_wf, particle_num_wf
     else:
         return positions, types, vel_wf, acc_wf
 
 
-def step(velocity, v_field, pressure, t, domain, obstacles, inflow, initial_velocity, pic, dt):
-
+def step(velocity, v_field, t, domain, obstacles, inflow, initial_velocity, pic, dt, **kwargs):
     # get liquid masks
     points = PointCloud(velocity.elements, values=1)
     cmask = points >> domain.grid()
@@ -99,7 +99,7 @@ def step(velocity, v_field, pressure, t, domain, obstacles, inflow, initial_velo
     bcs = flip.get_accessible_mask(domain, obstacles)
 
     v_force_field = v_field + dt * gravity_tensor(Gravity(), v_field.shape.spatial.rank)
-    v_div_free_field, pressure = flip.make_incompressible(v_force_field, bcs, cmask, smask, pressure)
+    v_div_free_field, pressure = flip.make_incompressible(v_force_field, bcs, cmask, smask, domain.grid(0))
     if pic:
         velocity = flip.map_velocity_to_particles(velocity, v_div_free_field, smask)
     else:
@@ -107,17 +107,18 @@ def step(velocity, v_field, pressure, t, domain, obstacles, inflow, initial_velo
     velocity = advect.advect(velocity, v_div_free_field, dt, occupied=smask, valid=bcs, mode='rk4')
     if t < inflow:
         velocity = velocity & initial_velocity
-    velocity = flip.respect_boundaries(velocity, domain, obstacles, offset=0)
+    velocity = flip.respect_boundaries(velocity, domain, obstacles, offset=0.5)
 
     # sample new velocity field
-    v_field = velocity.at(domain.sgrid())
+    v_field = velocity >> domain.sgrid()
 
     return dict(velocity=velocity, v_field=v_field, pressure=pressure, t=t + 1, domain=domain,
-                obstacles=obstacles, inflow=inflow, initial_velocity=initial_velocity, pic=pic)
+                obstacles=obstacles, inflow=inflow, initial_velocity=initial_velocity, pic=pic,
+                c_occupied=cmask)
 
 
 def main(_):
-    size = 65
+    size = 64
     domain = Domain(x=size, y=size, boundaries=CLOSED, bounds=Box[0:size, 0:size])
     dataset_size = FLAGS.size
     scale = [0.1, 0.9]
@@ -141,28 +142,38 @@ def main(_):
             point_limit = 900
             exclude = True
             while exclude:
-                initial_density, obstacles, vel = random_scene(domain, pool_max=4, block_num_max=4, multiple_blocks_prob=0.4,
-                                                               block_size_max=15, block_size_min=1, pool_min=2, obstacle_prob=0.8,
+                initial_density, obstacles, vel = random_scene(domain, pool_max=4, block_num_max=4,
+                                                               multiple_blocks_prob=0.4,
+                                                               block_size_max=15, block_size_min=1, pool_min=2,
+                                                               obstacle_prob=0.8,
                                                                vel_prob=0.5, vel_range=(-5, 5))
                 exclude = np.sum(initial_density.numpy()) * point_density >= point_limit
             example, vel_wf, acc_wf, particle_num_wf = sim2file(domain, initial_density, duration=sequence_length + 1,
-                                                                step_size=dt, scale=scale, particle_num_wf=particle_num_wf,
-                                                                vel_wf=vel_wf, acc_wf=acc_wf, point_density=point_density,
+                                                                step_size=dt, scale=scale,
+                                                                particle_num_wf=particle_num_wf,
+                                                                vel_wf=vel_wf, acc_wf=acc_wf,
+                                                                point_density=point_density,
                                                                 obstacles=obstacles, vel=vel)
             examples.append(example)
 
-        metadata = dict(bounds=[scale, scale], sequence_length=sequence_length, default_connectivity_radius=0.015, dim=2, dt=dt,
-                        dataset_size=dataset_size, vel_wf=vel_wf, acc_wf=acc_wf, particle_num_wf=particle_num_wf, examples=examples)
+        metadata = dict(bounds=[scale, scale], sequence_length=sequence_length, default_connectivity_radius=0.015,
+                        dim=2, dt=dt,
+                        dataset_size=dataset_size, vel_wf=vel_wf, acc_wf=acc_wf, particle_num_wf=particle_num_wf,
+                        examples=examples)
         with open(os.path.join(FLAGS.save_path, FLAGS.name) + '.pkl', 'wb') as f:
             pkl.dump(metadata, f)
     else:
         scale = [0, size]
-        point_mask = domain.grid(HardGeometryMask(union([Box[28:36, :40]])))
-        positions, types, _, _ = sim2file(domain, point_mask.values, duration=sequence_length + 1, step_size=dt,
-                                          scale=scale, point_density=point_density, tf_example=False,
-                                          distribution='center')
+        point_mask = domain.grid(HardGeometryMask(union([Box[10:30, 30:40]])))
+        obs = None
+        positions_flip, types, _, _ = sim2file(domain, point_mask.values, duration=sequence_length + 1, step_size=dt,
+                                               scale=scale, point_density=point_density, tf_example=False,
+                                               obstacles=obs)
+        positions_pic, types, _, _ = sim2file(domain, point_mask.values, duration=sequence_length + 1, step_size=dt,
+                                              scale=scale, point_density=point_density, tf_example=False, obstacles=obs,
+                                              pic=True)
         with open(os.path.join(FLAGS.save_path, FLAGS.name) + '.pkl', 'wb') as f:
-            pkl.dump(positions, f)
+            pkl.dump(dict(flip=positions_flip, pic=positions_pic, types=types, size=size), f)
 
 
 if __name__ == '__main__':
