@@ -27,7 +27,7 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
              obstacles: List[Obstacle] = None, scale: List[float] = None,
              pic: bool = False, tf_example: bool = True, vel: np.ndarray = None,
              particle_num_wf: Welford = None, vel_wf: Welford = None, acc_wf: Welford = None,
-             point_density: int = 8, distribution: str = 'uniform'):
+             point_density: int = 8, distribution: str = 'uniform', point_limit: int = None):
     # generate points
     initial_points = distribute_points(idensity, point_density, dist=distribution)
 
@@ -42,8 +42,12 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
     if obstacles is None:
         obstacles = []
     obstacle_mask = domain.grid(HardGeometryMask(union([obstacle.geometry for obstacle in obstacles]))).values
-    obstacle_points = distribute_points(obstacle_mask, 3)
+    obstacle_points = distribute_points(obstacle_mask, 1, dist='center')
     obstacle_points = PointCloud(Sphere(obstacle_points, 0))
+
+    if point_limit is not None:
+        if len(initial_velocity.elements.center.numpy()) + len(obstacle_points.elements.center.numpy()) > point_limit:
+            return None, vel_wf, acc_wf, particle_num_wf
 
     # define initial state
     state = dict(velocity=initial_velocity, v_field=initial_velocity.at(domain.sgrid()), pressure=domain.grid(0),
@@ -52,20 +56,23 @@ def sim2file(domain: Domain, idensity: Tensor, duration: int = 100,
 
     point_num = len(initial_points.native()) + len(obstacle_points.elements.center.native())
     positions = np.zeros((duration, point_num, 2), dtype=np.float32)
+    positions_stats = np.zeros((duration, len(initial_points.native()), 2), dtype=np.float32)
     types = np.ones(point_num, dtype=np.int64)
     types[len(initial_points.native()):] = 0
 
     for i in range(duration):
         velocity = state['velocity']
         positions[i, ...] = np.vstack((velocity.elements.center.numpy(), obstacle_points.elements.center.numpy()))
+        positions_stats[i, ...] = velocity.elements.center.numpy()
         state = step(dt=step_size, **state)
 
     if scale is not None:
         upper = domain.bounds.upper[0]
         scale_factor = upper.numpy() / (scale[1] - scale[0])
         positions = (positions / scale_factor) + scale[0]
+        positions_stats = (positions_stats / scale_factor) + scale[0]
 
-    vels = time_diff(positions)
+    vels = time_diff(positions_stats)
     if vel_wf is not None:
         vel_wf.addAll(vels.reshape(-1, 2))
     if acc_wf is not None:
@@ -107,7 +114,7 @@ def step(velocity, v_field, t, domain, obstacles, inflow, initial_velocity, pic,
     velocity = advect.advect(velocity, v_div_free_field, dt, occupied=smask, valid=bcs, mode='rk4')
     if t < inflow:
         velocity = velocity & initial_velocity
-    velocity = flip.respect_boundaries(velocity, domain, obstacles, offset=0.5)
+    velocity = flip.respect_boundaries(velocity, domain, obstacles, offset=0)
 
     # sample new velocity field
     v_field = velocity >> domain.sgrid()
@@ -118,7 +125,7 @@ def step(velocity, v_field, t, domain, obstacles, inflow, initial_velocity, pic,
 
 
 def main(_):
-    size = 64
+    size = 32
     domain = Domain(x=size, y=size, boundaries=CLOSED, bounds=Box[0:size, 0:size])
     dataset_size = FLAGS.size
     scale = [0.1, 0.9]
@@ -127,7 +134,7 @@ def main(_):
     point_density = 8
     random.seed(FLAGS.seed)
     np.random.seed(FLAGS.seed)
-    dataset = False
+    dataset = True
 
     if not os.path.exists(FLAGS.save_path):
         os.makedirs(FLAGS.save_path)
@@ -139,7 +146,7 @@ def main(_):
         particle_num_wf = Welford()
 
         for sim_ix in range(dataset_size):
-            point_limit = 900
+            point_limit = 1500
             exclude = True
             while exclude:
                 initial_density, obstacles, vel = random_scene(domain, pool_max=4, block_num_max=4,
@@ -147,13 +154,15 @@ def main(_):
                                                                block_size_max=15, block_size_min=1, pool_min=2,
                                                                obstacle_prob=0.8,
                                                                vel_prob=0.5, vel_range=(-5, 5))
-                exclude = np.sum(initial_density.numpy()) * point_density >= point_limit
-            example, vel_wf, acc_wf, particle_num_wf = sim2file(domain, initial_density, duration=sequence_length + 1,
-                                                                step_size=dt, scale=scale,
-                                                                particle_num_wf=particle_num_wf,
-                                                                vel_wf=vel_wf, acc_wf=acc_wf,
-                                                                point_density=point_density,
-                                                                obstacles=obstacles, vel=vel)
+
+                obstacles += [Obstacle(Box[:, 31:32]), Obstacle(Box[0:1, 1:31]), Obstacle(Box[:, 0:1]), Obstacle(Box[31:32, 1:31])]
+                example, vel_wf, acc_wf, particle_num_wf = sim2file(domain, initial_density, duration=sequence_length + 1,
+                                                                    step_size=dt, scale=scale,
+                                                                    particle_num_wf=particle_num_wf,
+                                                                    vel_wf=vel_wf, acc_wf=acc_wf,
+                                                                    point_density=point_density,
+                                                                    obstacles=obstacles, vel=vel, point_limit=point_limit)
+                exclude = example is None
             examples.append(example)
 
         metadata = dict(bounds=[scale, scale], sequence_length=sequence_length, default_connectivity_radius=0.015,
@@ -165,7 +174,7 @@ def main(_):
     else:
         scale = [0, size]
         point_mask = domain.grid(HardGeometryMask(union([Box[10:30, 30:40]])))
-        obs = None
+        obs = [Obstacle(Box[:, 65:66]), Obstacle(Box[0:1, 1:65]), Obstacle(Box[:, 0:1]), Obstacle(Box[65:66, 1:65])]
         positions_flip, types, _, _ = sim2file(domain, point_mask.values, duration=sequence_length + 1, step_size=dt,
                                                scale=scale, point_density=point_density, tf_example=False,
                                                obstacles=obs)

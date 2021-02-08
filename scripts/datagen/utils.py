@@ -13,14 +13,14 @@ def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool
     pool = random.random()
     if pool < pool_prob:
         pool_height = random.randint(pool_min, pool_max)
-        initial_density.native()[:, :pool_height] = 1
+        initial_density.native()[1:-1, 1:pool_height] = 1
     multiple_blocks = random.random()
     block_num = 1
     if pool > pool_prob and multiple_blocks < multiple_blocks_prob:
         block_num = random.randint(block_num_min, block_num_max)
     for i in range(block_num):
-        block_ly = random.randint(block_min, size - block_size_min - wall_distance)
-        block_lx = random.randint(1, size - block_size_min - wall_distance)
+        block_ly = random.randint(max(wall_distance, block_min), size - block_size_min - wall_distance)
+        block_lx = random.randint(max(wall_distance, block_min), size - block_size_min - wall_distance)
         block_uy = random.randint(block_ly + block_size_min, min(block_ly + block_size_max, size - wall_distance))
         block_ux = random.randint(block_lx + block_size_min, min(block_lx + block_size_max, size - wall_distance))
         initial_density.native()[block_lx:block_ux, block_ly:block_uy] = 1
@@ -40,9 +40,9 @@ def random_scene(domain: Domain, pool_prob: float = 0.3, pool_min: int = 3, pool
             obs_lx = random.randint(0, size)
             obs_uy = obs_ly + 1
             obs_ux = obs_lx + obs_length
-            obs = Obstacle(Box[obs_lx:obs_ux, obs_ly:obs_uy].rotated(obs_rot))
+            obs = Obstacle(Box[obs_lx:obs_ux, obs_ly:obs_uy].rotated(math.tensor(obs_rot)))
             # prevents distortion of fluids when passing by obstacles
-            bounding_box = Obstacle(Box[obs_lx-1:obs_ux+1, obs_ly-1:obs_uy+1].rotated(obs_rot))
+            bounding_box = Obstacle(Box[obs_lx-1:obs_ux+1, obs_ly-1:obs_uy+1].rotated(math.tensor(obs_rot)))
             obs_mask = domain.grid(HardGeometryMask(union([bounding_box.geometry]))).values
             valid = max(np.unique(initial_density.numpy() + obs_mask.numpy())) == 1
         obstacles.append(obs)

@@ -24,7 +24,6 @@ def main(_):
     for file in files:
         with open(os.path.join(FLAGS.ex_path, file), 'rb') as f:
             data = pkl.load(f)
-
         examples = examples + data['examples']
         if vel_wf is None:
             vel_wf = data['vel_wf']
@@ -55,12 +54,15 @@ def main(_):
         for example in examples:
             writer.write(example.SerializeToString())
 
-    metadata['vel_mean'] = vel_wf.mean.tolist()
-    metadata['acc_mean'] = acc_wf.mean.tolist()
-    metadata['particle_num_mean'] = float(particle_num_wf.mean)
-    metadata['vel_std'] = vel_wf.std.tolist()
-    metadata['acc_std'] = acc_wf.std.tolist()
-    metadata['particle_num_std'] = float(particle_num_wf.std)
+    if vel_wf is not None:
+        metadata['vel_mean'] = vel_wf.mean.tolist()
+        metadata['vel_std'] = vel_wf.std.tolist()
+    if acc_wf is not None:
+        metadata['acc_mean'] = acc_wf.mean.tolist()
+        metadata['acc_std'] = acc_wf.std.tolist()
+    if particle_num_wf is not None:
+        metadata['particle_num_mean'] = float(particle_num_wf.mean)
+        metadata['particle_num_std'] = float(particle_num_wf.std)
 
     with open(os.path.join(FLAGS.save_path, 'metadata.json'), 'w') as f:
         json.dump(metadata, f, indent=4)

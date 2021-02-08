@@ -98,6 +98,6 @@ def respect_boundaries(particles: PointCloud, domain: Domain, obstacles: tuple o
     """
     new_positions = particles.elements.center
     for obstacle in obstacles:
-        new_positions = obstacle.geometry.push(new_positions, shift_amount=offset)
-    new_positions = (~domain.bounds).push(new_positions, shift_amount=offset)
+        new_positions = obstacle.geometry.push(new_positions, shift_amount=0)
+    new_positions = (~domain.bounds).push(new_positions, shift_amount=1)
     return particles.with_(elements=Sphere(new_positions, 0))
