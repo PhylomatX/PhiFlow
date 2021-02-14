@@ -20,7 +20,7 @@ class FluidTest(TestCase):
         SIZE = 32
         DOMAIN = Domain(x=SIZE, y=SIZE, boundaries=CLOSED, bounds=Box[0:SIZE, 0:SIZE])
         DT = 0.05
-        ACCESSIBLE = field.stagger(DOMAIN.grid(), math.minimum, DOMAIN.boundaries.accessible_extrapolation)
+        ACCESSIBLE = DOMAIN.accessible_mask([], type=StaggeredGrid)
         PARTICLES = DOMAIN.distribute_points(union(Box[:, :10])) * (0, 0)
 
         state = dict(particles=PARTICLES, domain=DOMAIN, dt=DT, accessible=ACCESSIBLE)
@@ -35,7 +35,7 @@ class FluidTest(TestCase):
     def test_falling_shape(self):
         DOMAIN = Domain(x=32, y=128, boundaries=CLOSED, bounds=Box[0:32, 0:128])
         DT = 0.05
-        ACCESSIBLE = field.stagger(DOMAIN.grid(), math.minimum, DOMAIN.boundaries.accessible_extrapolation)
+        ACCESSIBLE = DOMAIN.accessible_mask([], type=StaggeredGrid)
         PARTICLES = DOMAIN.distribute_points(union(Box[12:20, 110:120]), center=True) * (0, 0)
         extent = math.max(PARTICLES.elements.center, dim='points') - math.min(PARTICLES.elements.center, dim='points')
         state = dict(particles=PARTICLES, domain=DOMAIN, dt=DT, accessible=ACCESSIBLE)
@@ -78,7 +78,6 @@ class FluidTest(TestCase):
                     smirrored[p * total + b * y_num:p * total + (b + 1) * y_num] = \
                         mirrored[(p + 1) * total - (b + 1) * y_num:(p + 1) * total - b * y_num]
             mse = np.square(smirrored - left).mean()
-            print(f'{i}: {mse}')
             if i < 45:
                 assert mse == 0  # block was falling until this frame
             elif i < 80:

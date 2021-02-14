@@ -38,15 +38,14 @@ def make_incompressible(velocity: StaggeredGrid,
         accessible = obstacles
     else:
         accessible = domain.accessible_mask(union(*[obstacle.geometry for obstacle in obstacles]), type=StaggeredGrid)
-    velocity_field *= accessible  # Enforces boundary conditions after extrapolation
-    div = field.divergence(velocity_field) * occupied_centered
+    div = field.divergence(velocity_field * accessible) * occupied_centered
 
     def matrix_eq(p):
         return field.where(occupied_centered, field.divergence(field.gradient(p, type=StaggeredGrid) * accessible), p)
 
     converged, pressure, iterations = field.solve(matrix_eq, div, pressure_guess or domain.grid(), solve_params=solve_params)
     gradp = field.gradient(pressure, type=type(velocity_field))
-    return velocity_field - gradp, pressure, iterations, div, occupied_staggered
+    return (velocity_field - gradp) * accessible, pressure, iterations, div, occupied_staggered
 
 
 def map_velocity_to_particles(previous_particle_velocity: PointCloud, velocity_grid: Grid, occupation_mask: Grid,
@@ -78,7 +77,7 @@ def map_velocity_to_particles(previous_particle_velocity: PointCloud, velocity_g
         return previous_particle_velocity.with_(values=v_values)
 
 
-def respect_boundaries(particles: PointCloud, domain: Domain, not_accessible: list, offset: float = 1.0) -> PointCloud:
+def respect_boundaries(particles: PointCloud, domain: Domain, not_accessible: list, offset: float = 0) -> PointCloud:
     """
     Enforces boundary conditions by correcting possible errors of the advection step and shifting particles out of 
     obstacles or back into the domain.
