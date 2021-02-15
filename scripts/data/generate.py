@@ -10,8 +10,8 @@ flags.DEFINE_integer('sim_num', 100, help="")
 flags.DEFINE_bool('flip', True, help="")
 flags.DEFINE_bool('view', False, help="")
 flags.DEFINE_bool('obs_center', True, help="")
-flags.DEFINE_integer('particle_limit', 1500, help="")
-flags.DEFINE_integer('duration', 500, help="")
+flags.DEFINE_integer('particle_limit', 1300, help="")
+flags.DEFINE_integer('duration', 400, help="")
 flags.DEFINE_list('scale', [0.1, 0.9], help="")
 flags.DEFINE_bool('record', True, help="")
 flags.DEFINE_string('path', None, help="")
@@ -27,7 +27,7 @@ def main(_):
     GRAVITY = math.tensor([0, -9.81])
     SCENE = None
     SCENE_PARAMS = None
-    RADIUS_SPECS = dict(radii=[0.015, 0.03], step=50, freq=5)
+    RADIUS_SPECS = dict(radii=[0.015, 0.03], step=50, freq=50)
 
     # --- PREPARE FOR GENERATION --- ####
     random.seed(FLAGS.seed)
